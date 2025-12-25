@@ -1,49 +1,44 @@
-const CACHE_NAME = 'apk-store-v3';
+const CACHE_NAME = 'apk-store-v4'; // Versão alterada para forçar refresh
 const ASSETS = [
     './',
     './index.html',
     './manifest.json',
+    './icon-192.png',
+    './icon-512.png',
     './favicon.ico',
     './favicon.png',
-    './favicon.svg',
-    './apple-touch-icon.png',
-    './icon-192.png',
-    './icon-512.png'
+    './apple-touch-icon.png'
 ];
 
-// Install Service Worker
+// Instalação - Estratégia Tolerante
 self.addEventListener('install', (event) => {
-    self.skipWaiting(); // Take over immediately
+    self.skipWaiting();
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
-            // We use addAll but in a local file context it might fail for some assets, 
-            // so we handle it gracefully.
-            return cache.addAll(ASSETS).catch(err => console.log('Cache error:', err));
+            // Tenta adicionar um por um para não quebrar se um arquivo faltar
+            return Promise.allSettled(
+                ASSETS.map(url => cache.add(url).catch(err => console.warn('Cache falhou para:', url)))
+            );
         })
     );
 });
 
-// Activate Service Worker
+// Ativação - Limpa caches antigos automaticamente
 self.addEventListener('activate', (event) => {
     event.waitUntil(
-        Promise.all([
-            // Take control of all clients immediately
-            clients.claim(),
-            // Clean up old caches
-            caches.keys().then((cacheNames) => {
-                return Promise.all(
-                    cacheNames.map((cacheName) => {
-                        if (cacheName !== CACHE_NAME) {
-                            return caches.delete(cacheName);
-                        }
-                    })
-                );
-            })
-        ])
+        caches.keys().then((cacheNames) => {
+            return Promise.all(
+                cacheNames.map((cacheName) => {
+                    if (cacheName !== CACHE_NAME) {
+                        return caches.delete(cacheName);
+                    }
+                })
+            );
+        }).then(() => self.clients.claim())
     );
 });
 
-// Fetch Strategy: Network First, falling back to cache
+// Fetch - Network First (Prioriza internet para dados do Supabase)
 self.addEventListener('fetch', (event) => {
     event.respondWith(
         fetch(event.request).catch(() => {
