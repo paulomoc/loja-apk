@@ -2517,35 +2517,66 @@
         });
     </script>
     <script>
-        // PWA Install Logic - Banner Agressivo
+        // PWA Install Logic - Com memória de escolha do usuário
         let deferredPrompt;
         const installBanner = document.getElementById('installBanner');
+        const BANNER_DISMISSED_KEY = 'pwa_banner_dismissed';
+        const BANNER_INSTALLED_KEY = 'pwa_installed';
+
+        // Verifica se deve mostrar o banner
+        function shouldShowBanner() {
+            // Se já instalou, nunca mostra
+            if (localStorage.getItem(BANNER_INSTALLED_KEY)) {
+                return false;
+            }
+            // Se clicou "Depois", verifica se já passou 7 dias
+            const dismissed = localStorage.getItem(BANNER_DISMISSED_KEY);
+            if (dismissed) {
+                const dismissedDate = new Date(parseInt(dismissed));
+                const now = new Date();
+                const daysPassed = (now - dismissedDate) / (1000 * 60 * 60 * 24);
+                if (daysPassed < 7) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // Mostra banner se permitido
+        function showBannerIfAllowed() {
+            if (shouldShowBanner() && installBanner) {
+                installBanner.style.opacity = "1";
+                installBanner.classList.remove('hidden');
+            } else if (installBanner) {
+                installBanner.classList.add('hidden');
+            }
+        }
+
+        // Inicializa - mostra banner se permitido
+        document.addEventListener('DOMContentLoaded', showBannerIfAllowed);
 
         window.addEventListener('beforeinstallprompt', (e) => {
-            // 1. Previne o prompt nativo de aparecer sozinho (o navegador exige isso)
             e.preventDefault();
-
-            // 2. Guarda o evento para usar depois
             deferredPrompt = e;
-
-            // 3. Mostra o nosso banner customizado
-            if (installBanner) {
-                installBanner.classList.remove('hidden');
-                console.log("Banner de instalação ativado!");
-            }
+            showBannerIfAllowed();
         });
 
         async function installPWA() {
-            if (!deferredPrompt) return;
+            if (!deferredPrompt) {
+                // Se não há prompt disponível, apenas fecha o banner
+                closeInstallBanner();
+                return;
+            }
 
-            // Esconde o banner antes de mostrar o prompt para evitar sobreposição visual
             closeInstallBanner();
-
-            // Mostra o diálogo nativo do Android/Chrome
             deferredPrompt.prompt();
 
             const { outcome } = await deferredPrompt.userChoice;
-            console.log(`Resposta do utilizador: ${outcome}`);
+            console.log(`Resposta do usuário: ${outcome}`);
+
+            if (outcome === 'accepted') {
+                localStorage.setItem(BANNER_INSTALLED_KEY, 'true');
+            }
 
             deferredPrompt = null;
         }
@@ -2553,20 +2584,24 @@
         function closeInstallBanner() {
             const banner = document.getElementById('installBanner');
             if (banner) {
+                // Salva que o usuário clicou "Depois"
+                localStorage.setItem(BANNER_DISMISSED_KEY, Date.now().toString());
+
                 banner.style.transition = "opacity 0.5s ease";
                 banner.style.opacity = "0";
                 setTimeout(() => banner.classList.add('hidden'), 500);
             }
         }
 
-        // Se o app já estiver instalado, garante que o banner não apareça
+        // Se o app for instalado
         window.addEventListener('appinstalled', () => {
             console.log('PWA instalado com sucesso!');
+            localStorage.setItem(BANNER_INSTALLED_KEY, 'true');
             if (installBanner) installBanner.classList.add('hidden');
             deferredPrompt = null;
         });
 
-        // Registro do Service Worker - Versão Otimizada
+        // Registro do Service Worker
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./sw.js')
