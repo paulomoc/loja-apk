@@ -137,6 +137,10 @@
             <div class="flex items-center justify-between mb-4">
                 <h1 class="text-3xl font-bold text-zinc-50">Loja de APKs</h1>
                 <div class="flex gap-2">
+                    <button id="installAppBtn" onclick="installPWA()"
+                        class="hidden focusable px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-zinc-950 font-bold rounded-md text-sm animate-pulse">
+                        📲 Instalar App
+                    </button>
                     <button onclick="openHelpModal()"
                         class="focusable px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-50 rounded-md border border-zinc-700 text-sm">
                         Ajuda
@@ -2464,7 +2468,50 @@
         });
     </script>
     <script>
-        // PWA Service Worker Registration
+        // PWA Install Logic
+        let deferredPrompt;
+        const installBtn = document.getElementById('installAppBtn');
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            // Prevent Chrome 67 and earlier from automatically showing the prompt
+            e.preventDefault();
+            // Stash the event so it can be triggered later.
+            deferredPrompt = e;
+            // Update UI to notify the user they can add to home screen
+            if (installBtn) {
+                installBtn.classList.remove('hidden');
+                console.log('PWA install prompt intercepted');
+            }
+        });
+
+        async function installPWA() {
+            if (!deferredPrompt) {
+                return;
+            }
+            // Show the prompt
+            deferredPrompt.prompt();
+            // Wait for the user to respond to the prompt
+            const { outcome } = await deferredPrompt.userChoice;
+            console.log(`User response to the install prompt: ${outcome}`);
+
+            // We've used the prompt, and can't use it again, discard it
+            deferredPrompt = null;
+
+            // Hide the button regardless of outcome (until next visit/eligibility)
+            if (installBtn) {
+                installBtn.classList.add('hidden');
+            }
+        }
+
+        window.addEventListener('appinstalled', () => {
+            console.log('PWA was installed');
+            if (installBtn) {
+                installBtn.classList.add('hidden');
+            }
+            // Optional: Report installation to analytics
+        });
+
+        // Service Worker Registration
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('sw.js')
