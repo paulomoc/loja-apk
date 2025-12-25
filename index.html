@@ -1,11 +1,18 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#09090b">
     <title>Loja de APKs Privada</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <link rel="manifest" href="manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         /* shadcn/ui inspired design system - Zinc palette */
@@ -17,37 +24,45 @@
             --text-muted: #a1a1aa;
             --accent: #facc15;
         }
+
         body {
             background-color: var(--bg-primary);
             color: var(--text-primary);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
+
         /* Focus styles for D-Pad navigation */
         .focusable:focus {
             outline: 4px solid var(--accent);
             transform: scale(1.05);
             z-index: 10;
         }
+
         /* Smooth transitions */
         .focusable {
             transition: all 0.2s ease;
         }
+
         /* Custom scrollbar */
         ::-webkit-scrollbar {
             width: 8px;
         }
+
         ::-webkit-scrollbar-track {
             background: var(--bg-card);
         }
+
         ::-webkit-scrollbar-thumb {
             background: var(--border);
             border-radius: 4px;
         }
+
         /* Modal overlay */
         .modal-overlay {
             background-color: rgba(0, 0, 0, 0.8);
             backdrop-filter: blur(4px);
         }
+
         /* Loading spinner */
         .spinner {
             border: 3px solid var(--border);
@@ -57,20 +72,63 @@
             height: 24px;
             animation: spin 1s linear infinite;
         }
+
         @keyframes spin {
             0% {
                 transform: rotate(0deg);
             }
+
             100% {
                 transform: rotate(360deg);
             }
         }
+
+        /* Toast Notification */
+        .toast {
+            visibility: hidden;
+            min-width: 250px;
+            margin-left: -125px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 8px;
+            padding: 16px;
+            position: fixed;
+            z-index: 100;
+            left: 50%;
+            bottom: 30px;
+            font-size: 14px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+            opacity: 0;
+            transition: opacity 0.3s, bottom 0.3s;
+        }
+
+        .toast.show {
+            visibility: visible;
+            opacity: 1;
+            bottom: 50px;
+        }
+
+        .toast.success {
+            background-color: #064e3b;
+            border-color: #065f46;
+            color: #ecfdf5;
+        }
+
+        .toast.error {
+            background-color: #7f1d1d;
+            border-color: #991b1b;
+            color: #fef2f2;
+        }
+
         /* Hide elements */
         .hidden {
             display: none !important;
         }
     </style>
 </head>
+
 <body class="min-h-screen">
     <!-- Store View -->
     <div id="storeView" class="container mx-auto px-4 py-6 max-w-6xl">
@@ -93,21 +151,40 @@
             <input type="text" id="searchInput" placeholder="Buscar aplicativos..."
                 class="focusable w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-50 placeholder-zinc-500 focus:border-zinc-700"
                 oninput="filterApps()">
+            <!-- Filters -->
+            <div class="flex flex-wrap gap-3 mt-3">
+                <select id="categoryFilter" onchange="filterApps()"
+                    class="focusable px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-50 text-sm">
+                    <option value="">Todas as categorias</option>
+                </select>
+                <select id="sortOrder" onchange="filterApps()"
+                    class="focusable px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-50 text-sm">
+                    <option value="recent">Mais recentes</option>
+                    <option value="name_asc">Nome A-Z</option>
+                    <option value="name_desc">Nome Z-A</option>
+                    <option value="rating">Melhor avaliados</option>
+                </select>
+                <span id="appCount" class="text-zinc-500 text-sm self-center ml-auto"></span>
+            </div>
         </header>
+
         <!-- APK List -->
         <div id="appList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <!-- Apps will be loaded here -->
         </div>
+
         <!-- Loading state -->
         <div id="storeLoading" class="text-center py-12">
             <div class="spinner mx-auto"></div>
             <p class="text-zinc-500 mt-4">Carregando aplicativos...</p>
         </div>
+
         <!-- Empty state -->
         <div id="emptyState" class="hidden text-center py-12">
             <p class="text-zinc-500">Nenhum aplicativo encontrado.</p>
         </div>
     </div>
+
     <!-- Admin Login View -->
     <div id="adminLoginView" class="hidden container mx-auto px-4 py-6 max-w-md">
         <div class="bg-zinc-900 border border-zinc-800 rounded-md p-8">
@@ -140,27 +217,45 @@
             </div>
         </div>
     </div>
+
     <!-- Admin Dashboard View -->
+    <div id="toast" class="toast"></div>
     <div id="adminDashboardView" class="hidden container mx-auto px-4 py-6 max-w-6xl">
         <!-- Header -->
         <div class="flex items-center justify-between mb-8">
             <h1 class="text-3xl font-bold text-zinc-50">Painel Admin</h1>
-            <button onclick="logout()"
-                class="focusable px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-50 rounded-md border border-zinc-700">
-                Sair
-            </button>
+            <div class="flex gap-2">
+                <button onclick="navigateTo('#/')"
+                    class="focusable px-4 py-2 bg-blue-600 hover:bg-blue-500 text-zinc-50 rounded-md">
+                    🏠 Home
+                </button>
+                <button onclick="logout()"
+                    class="focusable px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-50 rounded-md border border-zinc-700">
+                    Sair
+                </button>
+            </div>
         </div>
+
         <!-- Tabs -->
-        <div class="flex gap-2 mb-6 border-b border-zinc-800">
+        <div class="flex flex-wrap gap-2 mb-6 border-b border-zinc-800">
             <button id="tabUpload" onclick="switchTab('upload')"
                 class="focusable px-4 py-2 border-b-2 border-yellow-500 text-yellow-500 font-medium">
                 Upload APK
+            </button>
+            <button id="tabManage" onclick="switchTab('manage')"
+                class="focusable px-4 py-2 border-b-2 border-transparent text-zinc-400 hover:text-zinc-50">
+                Gerenciar
+            </button>
+            <button id="tabStats" onclick="switchTab('stats')"
+                class="focusable px-4 py-2 border-b-2 border-transparent text-zinc-400 hover:text-zinc-50">
+                📊 Estatísticas
             </button>
             <button id="tabSetup" onclick="switchTab('setup')"
                 class="focusable px-4 py-2 border-b-2 border-transparent text-zinc-400 hover:text-zinc-50">
                 Setup
             </button>
         </div>
+
         <!-- Upload Tab -->
         <div id="uploadTab" class="bg-zinc-900 border border-zinc-800 rounded-md p-6">
             <h3 class="text-xl font-semibold mb-4 text-zinc-50">Upload de APK</h3>
@@ -172,16 +267,41 @@
                         placeholder="Ex: Meu Aplicativo">
                 </div>
                 <div>
-                    <label class="block text-sm text-zinc-400 mb-2">Versão (opcional - auto-incrementa)</label>
+                    <label class="block text-sm text-zinc-400 mb-2">Versão do Sistema (opcional -
+                        auto-incrementa)</label>
                     <input type="text" id="appVersion"
                         class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50"
-                        placeholder="Ex: 1.0.0">
+                        placeholder="Ex: 1.0, 1.1, 1.2...">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-2">Versão do Android (opcional)</label>
+                    <input type="text" id="appVersionAndroid"
+                        class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50"
+                        placeholder="Ex: 2.5.1, 3.0.0">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-2">Data da Versão (opcional)</label>
+                        <input type="date" id="appVersionDate"
+                            class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-2">Data do Upload (hoje por padrão)</label>
+                        <input type="date" id="appUploadDate"
+                            class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50">
+                    </div>
                 </div>
                 <div>
                     <label class="block text-sm text-zinc-400 mb-2">Descrição</label>
                     <textarea id="appDescription" rows="3"
                         class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50"
                         placeholder="Descrição do aplicativo..."></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-2">O que há de novo (changelog)</label>
+                    <textarea id="appChangelog" rows="2"
+                        class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50"
+                        placeholder="Ex: - Correção de bugs&#10;- Nova funcionalidade X..."></textarea>
                 </div>
                 <div>
                     <label class="block text-sm text-zinc-400 mb-2">Categoria (opcional)</label>
@@ -197,8 +317,10 @@
                 </div>
                 <div>
                     <label class="block text-sm text-zinc-400 mb-2">Arquivo APK</label>
-                    <input type="file" id="apkFile" accept=".apk"
+                    <input type="file" id="apkFile" accept=".apk" onchange="handleAPKSelection(this)"
                         class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-yellow-500 file:text-zinc-950 file:font-medium hover:file:bg-yellow-400">
+                    <p id="apkAutoInfo" class="text-xs text-blue-400 mt-1 hidden"></p>
+                    <input type="hidden" id="appPackageName">
                 </div>
                 <button onclick="uploadAPK()" id="uploadBtn"
                     class="focusable w-full px-4 py-3 bg-yellow-500 hover:bg-yellow-400 text-zinc-950 font-medium rounded-md">
@@ -207,22 +329,142 @@
             </div>
             <div id="uploadStatus" class="hidden mt-4"></div>
         </div>
+
+        <!-- Manage Tab -->
+        <div id="manageTab" class="hidden bg-zinc-900 border border-zinc-800 rounded-md p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-semibold text-zinc-50">Gerenciar Aplicativos</h3>
+                <button onclick="loadManageApps()"
+                    class="focusable px-3 py-1 bg-blue-600 hover:bg-blue-500 text-zinc-50 text-sm rounded-md">
+                    🔄 Atualizar
+                </button>
+            </div>
+            <div class="mb-4">
+                <label class="inline-flex items-center text-sm text-zinc-400">
+                    <input type="checkbox" id="showInactive" onchange="loadManageApps()" class="mr-2 rounded">
+                    Mostrar apps inativos
+                </label>
+            </div>
+            <div id="manageAppsList" class="space-y-2">
+                <p class="text-zinc-500 text-center py-8">Clique em "Atualizar" para carregar a lista de apps.</p>
+            </div>
+        </div>
+
+        <!-- Stats Tab -->
+        <div id="statsTab" class="hidden bg-zinc-900 border border-zinc-800 rounded-md p-6">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-semibold text-zinc-50">📊 Estatísticas da Loja</h3>
+                <button onclick="loadStats()"
+                    class="focusable px-3 py-1 bg-blue-600 hover:bg-blue-500 text-zinc-50 text-sm rounded-md">
+                    🔄 Atualizar
+                </button>
+            </div>
+
+            <!-- Metrics Cards -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-zinc-950 border border-zinc-800 rounded-md p-4 text-center">
+                    <p class="text-3xl font-bold text-yellow-500" id="statTotalApps">-</p>
+                    <p class="text-sm text-zinc-400">Apps Ativos</p>
+                </div>
+                <div class="bg-zinc-950 border border-zinc-800 rounded-md p-4 text-center">
+                    <p class="text-3xl font-bold text-blue-500" id="statTotalDownloads">-</p>
+                    <p class="text-sm text-zinc-400">Downloads</p>
+                </div>
+                <div class="bg-zinc-950 border border-zinc-800 rounded-md p-4 text-center">
+                    <p class="text-3xl font-bold text-green-500" id="statPositiveRatings">-</p>
+                    <p class="text-sm text-zinc-400">👍 Positivos</p>
+                </div>
+                <div class="bg-zinc-950 border border-zinc-800 rounded-md p-4 text-center">
+                    <p class="text-3xl font-bold text-red-500" id="statNegativeRatings">-</p>
+                    <p class="text-sm text-zinc-400">👎 Negativos</p>
+                </div>
+            </div>
+
+            <!-- Top Apps -->
+            <div class="mb-6">
+                <h4 class="text-lg font-semibold text-zinc-50 mb-3">🏆 Top Apps por Downloads</h4>
+                <div id="topAppsList" class="space-y-2">
+                    <p class="text-zinc-500 text-center py-4">Carregando...</p>
+                </div>
+            </div>
+
+            <!-- Storage Monitoring -->
+            <div class="mb-6 border-t border-zinc-800 pt-6">
+                <div class="flex items-center justify-between mb-3">
+                    <h4 class="text-lg font-semibold text-zinc-50">💾 Uso de Armazenamento</h4>
+                    <button onclick="loadStorageStats()"
+                        class="focusable px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 text-zinc-50 rounded">
+                        🔄 Atualizar
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                    <!-- Supabase Storage -->
+                    <div class="bg-zinc-950 border border-zinc-800 rounded-md p-4">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-green-500">🗄️</span>
+                            <span class="font-medium text-zinc-50">Supabase Storage</span>
+                        </div>
+                        <p class="text-2xl font-bold text-green-400" id="supabaseStorageUsed">-</p>
+                        <p class="text-xs text-zinc-500">Espaço usado (ícones)</p>
+                        <div class="mt-2 bg-zinc-800 h-2 rounded-full overflow-hidden">
+                            <div id="supabaseStorageBar" class="bg-green-500 h-full transition-all" style="width: 0%">
+                            </div>
+                        </div>
+                        <p class="text-xs text-zinc-600 mt-1">Limite: 1 GB (plano gratuito)</p>
+                    </div>
+
+                    <!-- GitHub Releases -->
+                    <div class="bg-zinc-950 border border-zinc-800 rounded-md p-4">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-purple-500">📦</span>
+                            <span class="font-medium text-zinc-50">GitHub Releases</span>
+                        </div>
+                        <p class="text-2xl font-bold text-purple-400" id="githubReleasesCount">-</p>
+                        <p class="text-xs text-zinc-500">APKs hospedados</p>
+                        <p class="text-xl font-semibold text-blue-400 mt-2" id="githubTotalDownloads">-</p>
+                        <p class="text-xs text-zinc-500">Downloads totais (GitHub)</p>
+                    </div>
+                </div>
+
+                <!-- Explanation -->
+                <div class="bg-zinc-950 border border-zinc-700 rounded-md p-3 text-xs">
+                    <p class="text-yellow-500 font-medium mb-1">⚠️ Limitações da API:</p>
+                    <ul class="text-zinc-400 space-y-1 list-disc list-inside">
+                        <li><strong>Supabase:</strong> Mostra apenas ícones no bucket app-icons. Tráfego/bandwidth não
+                            disponível via API.</li>
+                        <li><strong>GitHub:</strong> Downloads contados por release. Sem limite de storage para releases
+                            públicas.</li>
+                        <li>Para dados completos de uso, acesse os dashboards oficiais.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Export Section -->
+            <div class="border-t border-zinc-800 pt-6">
+                <h4 class="text-lg font-semibold text-zinc-50 mb-3">📦 Exportar Dados</h4>
+                <div class="flex flex-wrap gap-3">
+                    <button onclick="exportData('json')"
+                        class="focusable px-4 py-2 bg-green-600 hover:bg-green-500 text-zinc-50 rounded-md">
+                        📄 Exportar JSON
+                    </button>
+                    <button onclick="exportData('csv')"
+                        class="focusable px-4 py-2 bg-purple-600 hover:bg-purple-500 text-zinc-50 rounded-md">
+                        📊 Exportar CSV
+                    </button>
+                    <button onclick="exportRatings()"
+                        class="focusable px-4 py-2 bg-orange-600 hover:bg-orange-500 text-zinc-50 rounded-md">
+                        ⭐ Exportar Avaliações
+                    </button>
+                </div>
+                <p class="text-xs text-zinc-500 mt-2">Os arquivos serão baixados automaticamente.</p>
+            </div>
+        </div>
+
         <!-- Setup Tab -->
         <div id="setupTab" class="hidden bg-zinc-900 border border-zinc-800 rounded-md p-6">
             <h3 class="text-xl font-semibold mb-4 text-zinc-50">Configurações</h3>
             <div class="space-y-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-2">GitHub Token</label>
-                    <input type="password" id="githubToken"
-                        class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50"
-                        placeholder="ghp_...">
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-2">GitHub Repo Path</label>
-                    <input type="text" id="githubRepo"
-                        class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50"
-                        placeholder="usuario/repositorio">
-                </div>
                 <div>
                     <label class="block text-sm text-zinc-400 mb-2">Supabase URL</label>
                     <input type="text" id="supabaseUrl"
@@ -234,6 +476,18 @@
                     <input type="password" id="supabaseKey"
                         class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50"
                         placeholder="eyJ...">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-2">GitHub Token</label>
+                    <input type="password" id="githubToken"
+                        class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50"
+                        placeholder="ghp_...">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-2">GitHub Repo Path</label>
+                    <input type="text" id="githubRepo"
+                        class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50"
+                        placeholder="usuario/repositorio">
                 </div>
                 <button onclick="saveSetup()"
                     class="focusable w-full px-4 py-3 bg-yellow-500 hover:bg-yellow-400 text-zinc-950 font-medium rounded-md">
@@ -247,6 +501,7 @@
             <div id="setupStatus" class="hidden mt-4"></div>
         </div>
     </div>
+
     <!-- Setup Modal (Initial Configuration) -->
     <div id="setupModal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
         <div
@@ -291,6 +546,7 @@
             <div id="setupModalStatus" class="hidden mt-4"></div>
         </div>
     </div>
+
     <!-- Help Modal -->
     <div id="helpModal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
         <div class="bg-zinc-900 border border-zinc-800 rounded-md p-6 max-w-2xl mx-4 max-h-[80vh] overflow-y-auto">
@@ -348,37 +604,342 @@
             </button>
         </div>
     </div>
+
+    <!-- Edit App Modal -->
+    <div id="editAppModal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
+        <div
+            class="bg-zinc-900 border border-zinc-800 rounded-md p-6 max-w-2xl mx-4 w-full max-h-[80vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-bold text-zinc-50">Editar Aplicativo</h3>
+                <button onclick="closeEditModal()"
+                    class="focusable text-zinc-400 hover:text-zinc-50 text-2xl">&times;</button>
+            </div>
+            <input type="hidden" id="editAppId">
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-2">Nome do App</label>
+                    <input type="text" id="editAppName"
+                        class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-2">Versão do Sistema</label>
+                        <input type="text" id="editAppVersion"
+                            class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-2">Versão do Android</label>
+                        <input type="text" id="editAppVersionAndroid"
+                            class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-2">Data da Versão</label>
+                        <input type="date" id="editAppVersionDate"
+                            class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-2">Data do Upload</label>
+                        <input type="date" id="editAppUploadDate"
+                            class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-2">Descrição</label>
+                    <textarea id="editAppDescription" rows="3"
+                        class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-2">O que há de novo (changelog)</label>
+                    <textarea id="editAppChangelog" rows="2"
+                        class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-2">Categoria</label>
+                    <input type="text" id="editAppCategory"
+                        class="focusable w-full px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-md text-zinc-50">
+                </div>
+                <button onclick="saveAppEdit()"
+                    class="focusable w-full px-4 py-3 bg-yellow-500 hover:bg-yellow-400 text-zinc-950 font-medium rounded-md">
+                    💾 Salvar Alterações
+                </button>
+            </div>
+            <div id="editAppStatus" class="hidden mt-4"></div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteAppModal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-md p-6 max-w-md mx-4 w-full">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-bold text-zinc-50">⚠️ Confirmar Ação</h3>
+                <button onclick="closeDeleteModal()"
+                    class="focusable text-zinc-400 hover:text-zinc-50 text-2xl">&times;</button>
+            </div>
+            <input type="hidden" id="deleteAppId">
+            <p id="deleteAppName" class="text-zinc-300 mb-4"></p>
+            <div class="space-y-3">
+                <button onclick="toggleAppStatus(false)"
+                    class="focusable w-full px-4 py-3 bg-orange-600 hover:bg-orange-500 text-zinc-50 font-medium rounded-md">
+                    🔒 Desativar (ocultar da loja)
+                </button>
+                <button onclick="deleteAppPermanently()"
+                    class="focusable w-full px-4 py-3 bg-red-600 hover:bg-red-500 text-zinc-50 font-medium rounded-md">
+                    🗑️ Excluir Permanentemente
+                </button>
+                <button onclick="closeDeleteModal()"
+                    class="focusable w-full px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-50 rounded-md border border-zinc-700">
+                    Cancelar
+                </button>
+            </div>
+            <div id="deleteAppStatus" class="hidden mt-4"></div>
+        </div>
+    </div>
+
+    <!-- Rating Modal -->
+    <div id="ratingModal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-md p-6 max-w-md mx-4 w-full">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-bold text-zinc-50">Avaliar Aplicativo</h3>
+                <button onclick="closeRatingModal()"
+                    class="focusable text-zinc-400 hover:text-zinc-50 text-2xl">&times;</button>
+            </div>
+            <input type="hidden" id="ratingAppId">
+            <p id="ratingAppName" class="text-zinc-300 mb-4 text-center font-semibold"></p>
+
+            <div id="ratingStep1">
+                <p class="text-zinc-400 mb-4 text-center">Você testou este aplicativo no seu dispositivo?</p>
+                <div class="flex gap-3">
+                    <button onclick="confirmTested(true)"
+                        class="focusable flex-1 px-4 py-3 bg-green-600 hover:bg-green-500 text-zinc-50 font-medium rounded-md">
+                        ✅ Sim, testei
+                    </button>
+                    <button onclick="confirmTested(false)"
+                        class="focusable flex-1 px-4 py-3 bg-zinc-700 hover:bg-zinc-600 text-zinc-50 font-medium rounded-md">
+                        ❌ Não testei
+                    </button>
+                </div>
+            </div>
+
+            <div id="ratingStep2" class="hidden">
+                <p class="text-zinc-400 mb-4 text-center">O aplicativo funcionou corretamente?</p>
+                <div class="flex gap-3">
+                    <button onclick="submitRating(true)"
+                        class="focusable flex-1 px-4 py-4 bg-green-600 hover:bg-green-500 text-zinc-50 font-medium rounded-md text-2xl">
+                        👍 Funciona
+                    </button>
+                    <button onclick="submitRating(false)"
+                        class="focusable flex-1 px-4 py-4 bg-red-600 hover:bg-red-500 text-zinc-50 font-medium rounded-md text-2xl">
+                        👎 Não funciona
+                    </button>
+                </div>
+            </div>
+
+            <div id="ratingNotTested" class="hidden text-center">
+                <p class="text-zinc-400 mb-4">Por favor, teste o aplicativo antes de avaliar.</p>
+                <button onclick="closeRatingModal()"
+                    class="focusable px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-50 rounded-md border border-zinc-700">
+                    Entendi
+                </button>
+            </div>
+
+            <div id="ratingStatus" class="hidden mt-4"></div>
+        </div>
+    </div>
+
+    <!-- App Details Modal -->
+    <div id="appDetailsModal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
+        <div
+            class="bg-zinc-900 border border-zinc-800 rounded-md p-6 max-w-2xl mx-4 w-full max-h-[80vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h3 id="detailsAppName" class="text-xl font-bold text-zinc-50"></h3>
+                <button onclick="closeDetailsModal()"
+                    class="focusable text-zinc-400 hover:text-zinc-50 text-2xl">&times;</button>
+            </div>
+            <input type="hidden" id="detailsAppId">
+
+            <div class="flex items-start gap-4 mb-4">
+                <div id="detailsAppIcon" class="w-20 h-20 rounded-md overflow-hidden"></div>
+                <div class="flex-1">
+                    <div class="flex flex-wrap gap-2 mb-2">
+                        <span id="detailsAppCategory"
+                            class="px-2 py-1 text-xs bg-zinc-800 text-zinc-300 rounded"></span>
+                        <span id="detailsAppSize" class="px-2 py-1 text-xs bg-zinc-800 text-zinc-300 rounded"></span>
+                    </div>
+                    <p id="detailsAppVersion" class="text-sm text-zinc-400"></p>
+                    <p id="detailsAppVersionAndroid" class="text-sm text-zinc-500"></p>
+                    <p id="detailsAppDate" class="text-sm text-zinc-500"></p>
+                    <p id="detailsUploadDate" class="text-sm text-zinc-600 font-medium"></p>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <h4 class="text-sm font-semibold text-zinc-300 mb-2">Descrição</h4>
+                <p id="detailsAppDescription" class="text-sm text-zinc-400"></p>
+            </div>
+
+            <div id="detailsChangelogSection" class="hidden mb-4">
+                <h4 class="text-sm font-semibold text-zinc-300 mb-2">O que há de novo</h4>
+                <div id="detailsAppChangelog"
+                    class="text-sm text-zinc-400 bg-zinc-950 p-3 rounded-md whitespace-pre-wrap"></div>
+            </div>
+
+            <div class="flex items-center gap-4 mb-4 p-3 bg-zinc-950 rounded-md">
+                <div class="flex items-center gap-2">
+                    <span class="text-green-400">👍</span>
+                    <span id="detailsPositive" class="text-zinc-300">0</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-red-400">👎</span>
+                    <span id="detailsNegative" class="text-zinc-300">0</span>
+                </div>
+                <div class="flex items-center gap-2 ml-auto">
+                    <span class="text-blue-400">📥</span>
+                    <span id="detailsDownloads" class="text-zinc-300">0 downloads</span>
+                </div>
+            </div>
+
+            <div class="flex gap-3">
+                <button onclick="rateFromDetails(true)"
+                    class="focusable flex-1 px-4 py-2 bg-green-600 hover:bg-green-500 text-zinc-50 rounded-md">
+                    👍 Funciona
+                </button>
+                <button onclick="rateFromDetails(false)"
+                    class="focusable flex-1 px-4 py-2 bg-red-600 hover:bg-red-500 text-zinc-50 rounded-md">
+                    👎 Não funciona
+                </button>
+            </div>
+
+            <a id="detailsDownloadBtn" href="#" download onclick="trackDownload()"
+                class="focusable block w-full px-4 py-3 mt-4 bg-yellow-500 hover:bg-yellow-400 text-zinc-950 font-medium rounded-md text-center">
+                📥 Download APK (Versão Atual)
+            </a>
+
+            <!-- Version History -->
+            <div id="versionHistorySection" class="hidden mt-4 border-t border-zinc-800 pt-4">
+                <h4 class="text-sm font-semibold text-zinc-300 mb-3">📜 Versões Anteriores</h4>
+                <div id="versionHistoryList" class="space-y-2 max-h-48 overflow-y-auto"></div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Global state
         var supabaseClient = null;
         var allApps = [];
         var currentView = 'store';
+
         // Initialize app on load
         window.addEventListener('load', function () {
             initApp();
         });
+
         // Initialize application
         function initApp() {
             setupRouter();
             loadSetup();
             setupKeyboardNav();
+
             // Load store data
             if (window.location.hash === '' || window.location.hash === '#/') {
                 renderStore();
             }
         }
+
         // Setup hash-based routing
+        // --- IDEIA 2: AUTO-PARSING APK (Robusto) ---
+        async function handleAPKSelection(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const statusEl = document.getElementById('apkAutoInfo');
+            statusEl.classList.remove('hidden');
+            statusEl.textContent = '🔄 Analisando estrutura do APK...';
+            statusEl.className = 'text-xs text-blue-400 mt-1';
+
+            try {
+                const zip = new JSZip();
+                const loadedZip = await zip.loadAsync(file);
+                const manifestFile = loadedZip.file("AndroidManifest.xml");
+
+                if (!manifestFile) throw new Error('Manifest não encontrado');
+
+                const buffer = await manifestFile.async("uint8array");
+
+                // Decodificador AXML Simplificado (Extração de String Pool)
+                // O AndroidManifest binário guarda todas as strings em um "Pool" no início do arquivo
+                const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+
+                // Header: Magic Number (0x00080003) e Size
+                if (view.getUint32(0, true) !== 0x00080003) throw new Error('Não é um AXML válido');
+
+                // String Pool Header (geralmente começa no offset 8)
+                let stringPoolOffset = 8;
+                let chunkType = view.getUint32(stringPoolOffset, true);
+                if (chunkType !== 0x001C0001) throw new Error('String pool não encontrado');
+
+                let stringCount = view.getUint32(stringPoolOffset + 8, true);
+                let stringsOffset = stringPoolOffset + view.getUint32(stringPoolOffset + 20, true);
+
+                let strings = [];
+                for (let i = 0; i < stringCount; i++) {
+                    let off = stringsOffset + view.getUint32(stringPoolOffset + 28 + (i * 4), true);
+                    let len = view.getUint16(off, true); // UTF-16 len
+                    let str = "";
+                    for (let j = 0; j < len; j++) {
+                        str += String.fromCharCode(view.getUint16(off + 2 + (j * 2), true));
+                    }
+                    strings.push(str);
+                }
+
+                // Agora procuramos na lista de strings por algo que pareça um package name ou versão
+                let pkg = strings.find(s => s.includes('.') && s.split('.').length >= 2 && !s.includes(' ') && s.length > 5);
+                let ver = strings.find(s => /^[0-9]+\.[0-9]+/.test(s));
+
+                let infoParts = [];
+                if (pkg) {
+                    document.getElementById('appPackageName').value = pkg;
+                    infoParts.push('📦 ID: ' + pkg);
+                }
+                if (ver) {
+                    document.getElementById('appVersionAndroid').value = ver;
+                    infoParts.push('ver: ' + ver);
+                }
+
+                // Nome do App sugerido pelo arquivo (sempre substitui ao trocar de arquivo)
+                const cleanName = file.name.replace('.apk', '').replace(/[_-]/g, ' ');
+                document.getElementById('appName').value = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
+
+                if (infoParts.length > 0) {
+                    statusEl.textContent = '✅ Detectado: ' + infoParts.join(' • ');
+                    statusEl.className = 'text-xs text-green-400 mt-1';
+                } else {
+                    statusEl.textContent = '⚠️ Dados parciais ou não encontrados no pool de strings.';
+                    statusEl.className = 'text-xs text-yellow-500 mt-1';
+                }
+
+            } catch (err) {
+                console.error('Erro ao ler APK:', err);
+                statusEl.textContent = '⚠️ Incompatibilidade: Este APK usa uma estrutura de strings diferente.';
+                statusEl.className = 'text-xs text-zinc-500 mt-1';
+            }
+        }
+        // ---------------------------------
+
         function setupRouter() {
             window.addEventListener('hashchange', handleRoute);
             handleRoute();
         }
-        // Handle route changes
+
         function handleRoute() {
             var hash = window.location.hash;
+
             // Hide all views
             document.getElementById('storeView').classList.add('hidden');
             document.getElementById('adminLoginView').classList.add('hidden');
             document.getElementById('adminDashboardView').classList.add('hidden');
+
             // Show appropriate view
             if (hash === '' || hash === '#/') {
                 document.getElementById('storeView').classList.remove('hidden');
@@ -400,43 +961,67 @@
                 navigateTo('#/');
             }
         }
+
         // Navigate to route
         function navigateTo(route) {
             window.location.hash = route;
         }
+
         // Load setup from localStorage
+        // Initialize Supabase client
         function loadSetup() {
-            var supabaseUrl = localStorage.getItem('supabaseUrl');
-            var supabaseKey = localStorage.getItem('supabaseKey');
+            // Default configuration (Hardcoded for single-file deployment)
+            var defaultConfig = {
+                url: 'https://zrxowkbepbfmqnqlneid.supabase.co',
+                key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpyeG93a2JlcGJmbXFucWxuZWlkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1ODkwMDksImV4cCI6MjA4MjE2NTAwOX0.0GJMzS9bxzqNJJrz-dSzDslr01C7ubSPVbvB71_ZLMI'
+            };
+
+            var supabaseUrl = localStorage.getItem('supabaseUrl') || defaultConfig.url;
+            var supabaseKey = localStorage.getItem('supabaseKey') || defaultConfig.key;
+
+            // Ensure they are saved in localStorage for other functions to access
+            if (!localStorage.getItem('supabaseUrl')) localStorage.setItem('supabaseUrl', supabaseUrl);
+            if (!localStorage.getItem('supabaseKey')) localStorage.setItem('supabaseKey', supabaseKey);
+
             if (supabaseUrl && supabaseKey) {
                 try {
                     supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+                    console.log('Supabase conectado com sucesso (Project: ' + supabaseUrl.split('//')[1].split('.')[0] + ')');
                 } catch (error) {
                     console.error('Erro ao conectar com Supabase:', error);
                 }
+            } else {
+                console.warn('Supabase Key ausente. Configure no painel Admin.');
             }
         }
+
+
         // Render store view
         function renderStore() {
             if (!supabaseClient) {
                 showEmptyState('Configure o Supabase no painel Admin primeiro.');
                 return;
             }
+
             document.getElementById('storeLoading').classList.remove('hidden');
             document.getElementById('emptyState').classList.add('hidden');
+
             supabaseClient
                 .from('aplicativos')
                 .select('*')
+                .neq('ativo', false)
                 .order('data_upload', { ascending: false })
                 .then(function (response) {
                     document.getElementById('storeLoading').classList.add('hidden');
+
                     if (response.error) {
                         console.error('Erro ao carregar apps:', response.error);
                         showEmptyState('Erro ao carregar aplicativos.');
                         return;
                     }
+
                     allApps = response.data || [];
-                    displayApps(allApps);
+                    loadRatingsAndDisplay(allApps);
                 })
                 .catch(function (error) {
                     console.error('Erro:', error);
@@ -444,73 +1029,205 @@
                     showEmptyState('Erro ao conectar com o servidor.');
                 });
         }
+
+        // Load ratings for apps and then display
+        function loadRatingsAndDisplay(apps) {
+            if (!apps || apps.length === 0) {
+                displayApps(apps, {});
+                return;
+            }
+
+            var appIds = [];
+            for (var i = 0; i < apps.length; i++) {
+                appIds.push(apps[i].id);
+            }
+
+            supabaseClient
+                .from('avaliacoes')
+                .select('aplicativo_id, positivo')
+                .in('aplicativo_id', appIds)
+                .then(function (response) {
+                    var ratings = {};
+                    if (response.data) {
+                        for (var i = 0; i < response.data.length; i++) {
+                            var r = response.data[i];
+                            if (!ratings[r.aplicativo_id]) {
+                                ratings[r.aplicativo_id] = { positivo: 0, negativo: 0 };
+                            }
+                            if (r.positivo) {
+                                ratings[r.aplicativo_id].positivo++;
+                            } else {
+                                ratings[r.aplicativo_id].negativo++;
+                            }
+                        }
+                    }
+                    allRatings = ratings;
+                    populateCategories(apps);
+                    filterApps();
+                })
+                .catch(function () {
+                    allRatings = {};
+                    populateCategories(apps);
+                    filterApps();
+                });
+        }
+
         // Display apps in grid
-        function displayApps(apps) {
+        function displayApps(apps, ratings) {
             var appList = document.getElementById('appList');
+            ratings = ratings || {};
+
             if (!apps || apps.length === 0) {
                 appList.innerHTML = '';
                 showEmptyState('Nenhum aplicativo disponível.');
                 return;
             }
+
             document.getElementById('emptyState').classList.add('hidden');
+
             var html = '';
+            var now = new Date();
+            var sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
             for (var i = 0; i < apps.length; i++) {
                 var app = apps[i];
                 var iconHtml = app.icone_url
                     ? '<img src="' + app.icone_url + '" alt="' + app.nome + '" class="w-16 h-16 rounded-md object-cover">'
                     : generateFallbackIcon(app.nome);
+
                 var sizeText = app.tamanho_mb ? app.tamanho_mb + ' MB' : 'N/A';
-                var versionText = app.versao ? 'Versão ' + app.versao : 'Sem versão';
+                var versionText = app.versao ? 'v' + app.versao : '';
+                if (app.versao_android) versionText += ' (Android: ' + app.versao_android + ')';
+                if (!versionText) versionText = 'Sem versão';
                 var description = app.descricao || 'Sem descrição';
                 var category = app.categoria ? '<span class="inline-block px-2 py-1 text-xs bg-zinc-800 text-zinc-300 rounded">' + app.categoria + '</span>' : '';
+
+                // Check if app is new (less than 7 days old)
+                var isNew = app.data_upload && new Date(app.data_upload) > sevenDaysAgo;
+                var newBadge = isNew ? '<span class="ml-2 px-2 py-0.5 text-xs bg-green-600 text-white rounded-full animate-pulse">NOVO</span>' : '';
+
+                // Dates
+                var versionDate = app.data_versao ? new Date(app.data_versao).toLocaleDateString('pt-BR') : 'Não informada';
+                var uploadDate = app.data_upload ? new Date(app.data_upload).toLocaleDateString('pt-BR') : 'Não informada';
+
+                var appRating = ratings[app.id] || { positivo: 0, negativo: 0 };
+                var ratingHtml = '<div class="flex items-center gap-3 text-sm">';
+                ratingHtml += '<span class="text-green-400">👍 ' + appRating.positivo + '</span>';
+                ratingHtml += '<span class="text-red-400">👎 ' + appRating.negativo + '</span>';
+                if (uploadDate) ratingHtml += '<span class="text-zinc-600 text-xs">' + uploadDate + '</span>';
+                ratingHtml += '<span class="text-blue-400 ml-2" title="Downloads">📥 ' + (app.downloads || 0) + '</span>';
+                ratingHtml += '<button onclick="openDetailsModal(\'' + app.id + '\')" class="focusable ml-auto px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-zinc-50 rounded">Ver mais</button>';
+                ratingHtml += '</div>';
+
                 html += '<div class="bg-zinc-900 border border-zinc-800 rounded-md p-4 hover:border-zinc-700 transition-colors">';
                 html += '  <div class="flex items-start gap-4 mb-3">';
                 html += '    ' + iconHtml;
                 html += '    <div class="flex-1 min-w-0">';
-                html += '      <h3 class="text-lg font-semibold text-zinc-50 truncate">' + app.nome + '</h3>';
+                html += '      <h3 class="text-lg font-semibold text-zinc-50 truncate">' + app.nome + newBadge + '</h3>';
                 html += '      <p class="text-sm text-zinc-400">' + versionText + '</p>';
                 html += '      <p class="text-sm text-zinc-500">' + sizeText + '</p>';
                 if (category) html += '      <div class="mt-1">' + category + '</div>';
                 html += '    </div>';
                 html += '  </div>';
-                html += '  <p class="text-sm text-zinc-400 mb-4 line-clamp-2">' + description + '</p>';
-                html += '  <a href="' + app.apk_url + '" download class="focusable block w-full px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-zinc-950 font-medium rounded-md text-center text-sm">';
+                html += '  <p class="text-sm text-zinc-400 mb-3 line-clamp-2">' + description + '</p>';
+                html += '  ' + ratingHtml;
+                html += '  <a href="' + app.apk_url + '" download onclick="trackDownloadFromHome(\'' + app.id + '\')" class="focusable block w-full px-4 py-2 mt-3 bg-yellow-500 hover:bg-yellow-400 text-zinc-950 font-medium rounded-md text-center text-sm">';
                 html += '    Download';
                 html += '  </a>';
                 html += '</div>';
             }
+
             appList.innerHTML = html;
         }
-        // Filter apps by search
+        // Global ratings cache for sorting
+        var allRatings = {};
+
+        // Filter and sort apps
         function filterApps() {
             var searchTerm = document.getElementById('searchInput').value.toLowerCase();
-            if (!searchTerm) {
-                displayApps(allApps);
-                return;
-            }
+            var categoryFilter = document.getElementById('categoryFilter').value;
+            var sortOrder = document.getElementById('sortOrder').value;
+
             var filtered = [];
             for (var i = 0; i < allApps.length; i++) {
                 var app = allApps[i];
-                var matchName = app.nome.toLowerCase().indexOf(searchTerm) !== -1;
-                var matchDesc = app.descricao && app.descricao.toLowerCase().indexOf(searchTerm) !== -1;
-                if (matchName || matchDesc) {
+
+                // Search filter
+                var matchSearch = !searchTerm ||
+                    app.nome.toLowerCase().indexOf(searchTerm) !== -1 ||
+                    (app.descricao && app.descricao.toLowerCase().indexOf(searchTerm) !== -1) ||
+                    (app.categoria && app.categoria.toLowerCase().indexOf(searchTerm) !== -1);
+
+                // Category filter
+                var matchCategory = !categoryFilter || app.categoria === categoryFilter;
+
+                if (matchSearch && matchCategory) {
                     filtered.push(app);
                 }
             }
-            displayApps(filtered);
+
+            // Sort
+            filtered.sort(function (a, b) {
+                if (sortOrder === 'name_asc') {
+                    return a.nome.localeCompare(b.nome);
+                } else if (sortOrder === 'name_desc') {
+                    return b.nome.localeCompare(a.nome);
+                } else if (sortOrder === 'rating') {
+                    var ratingA = allRatings[a.id] ? (allRatings[a.id].positivo - allRatings[a.id].negativo) : 0;
+                    var ratingB = allRatings[b.id] ? (allRatings[b.id].positivo - allRatings[b.id].negativo) : 0;
+                    return ratingB - ratingA;
+                } else { // recent
+                    var dateA = a.data_upload ? new Date(a.data_upload) : new Date(0);
+                    var dateB = b.data_upload ? new Date(b.data_upload) : new Date(0);
+                    return dateB - dateA;
+                }
+            });
+
+            // Update count
+            document.getElementById('appCount').textContent = filtered.length + ' app' + (filtered.length !== 1 ? 's' : '');
+
+            displayApps(filtered, allRatings);
         }
+
+        // Populate category dropdown
+        function populateCategories(apps) {
+            var categories = {};
+            for (var i = 0; i < apps.length; i++) {
+                if (apps[i].categoria) {
+                    categories[apps[i].categoria] = true;
+                }
+            }
+
+            var select = document.getElementById('categoryFilter');
+            var currentValue = select.value;
+            select.innerHTML = '<option value="">Todas as categorias</option>';
+
+            var sortedCategories = Object.keys(categories).sort();
+            for (var j = 0; j < sortedCategories.length; j++) {
+                var option = document.createElement('option');
+                option.value = sortedCategories[j];
+                option.textContent = sortedCategories[j];
+                select.appendChild(option);
+            }
+
+            select.value = currentValue;
+        }
+
         // Generate fallback icon (circle with initial)
         function generateFallbackIcon(name) {
             var initial = name.charAt(0).toUpperCase();
             var colors = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899'];
             var colorIndex = name.charCodeAt(0) % colors.length;
             var color = colors[colorIndex];
+
             var svg = '<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">';
             svg += '<circle cx="32" cy="32" r="32" fill="' + color + '"/>';
             svg += '<text x="32" y="42" text-anchor="middle" fill="white" font-size="28" font-weight="bold" font-family="system-ui">' + initial + '</text>';
             svg += '</svg>';
+
             return '<div class="w-16 h-16 rounded-md overflow-hidden">' + svg + '</div>';
         }
+
         // Show empty state
         function showEmptyState(message) {
             var emptyState = document.getElementById('emptyState');
@@ -518,17 +1235,21 @@
             emptyState.querySelector('p').textContent = message || 'Nenhum aplicativo encontrado.';
             document.getElementById('appList').innerHTML = '';
         }
+
         // Validate PIN
         function validatePIN() {
             if (!supabaseClient) {
                 showError('loginError', 'Configure o Supabase primeiro no painel Admin.');
                 return;
             }
+
             var pin = document.getElementById('pinInput').value;
+
             if (!pin) {
                 showError('loginError', 'Digite o PIN.');
                 return;
             }
+
             supabaseClient
                 .from('configuracoes')
                 .select('pin_acesso')
@@ -539,8 +1260,10 @@
                         showError('loginError', 'Erro ao validar PIN.');
                         return;
                     }
+
                     if (response.data && response.data.pin_acesso === pin) {
                         localStorage.setItem('adminAuth', 'true');
+                        localStorage.setItem('adminPin', pin);
                         navigateTo('#/admin/dashboard');
                     } else {
                         showError('loginError', 'PIN incorreto.');
@@ -551,51 +1274,797 @@
                     showError('loginError', 'Erro ao conectar com o servidor.');
                 });
         }
+
         // Logout
         function logout() {
             localStorage.removeItem('adminAuth');
+            localStorage.removeItem('adminPin');
             navigateTo('#/admin');
         }
+
         // Switch admin tabs
         function switchTab(tab) {
-            // Update tab buttons
             var tabUpload = document.getElementById('tabUpload');
+            var tabManage = document.getElementById('tabManage');
+            var tabStats = document.getElementById('tabStats');
             var tabSetup = document.getElementById('tabSetup');
+            var uploadTab = document.getElementById('uploadTab');
+            var manageTab = document.getElementById('manageTab');
+            var statsTab = document.getElementById('statsTab');
+            var setupTab = document.getElementById('setupTab');
+
+            // Reset all tabs
             tabUpload.classList.remove('border-yellow-500', 'text-yellow-500');
             tabUpload.classList.add('border-transparent', 'text-zinc-400');
+            tabManage.classList.remove('border-yellow-500', 'text-yellow-500');
+            tabManage.classList.add('border-transparent', 'text-zinc-400');
+            tabStats.classList.remove('border-yellow-500', 'text-yellow-500');
+            tabStats.classList.add('border-transparent', 'text-zinc-400');
             tabSetup.classList.remove('border-yellow-500', 'text-yellow-500');
             tabSetup.classList.add('border-transparent', 'text-zinc-400');
-            // Show active tab
+            uploadTab.classList.add('hidden');
+            manageTab.classList.add('hidden');
+            statsTab.classList.add('hidden');
+            setupTab.classList.add('hidden');
+
+            // Activate selected tab
             if (tab === 'upload') {
-                document.getElementById('uploadTab').classList.remove('hidden');
-                document.getElementById('setupTab').classList.add('hidden');
+                uploadTab.classList.remove('hidden');
                 tabUpload.classList.add('border-yellow-500', 'text-yellow-500');
                 tabUpload.classList.remove('border-transparent', 'text-zinc-400');
+
+                // Set default upload date to today
+                document.getElementById('appUploadDate').value = new Date().toISOString().split('T')[0];
+            } else if (tab === 'manage') {
+                manageTab.classList.remove('hidden');
+                tabManage.classList.add('border-yellow-500', 'text-yellow-500');
+                tabManage.classList.remove('border-transparent', 'text-zinc-400');
+                loadManageApps();
+            } else if (tab === 'stats') {
+                statsTab.classList.remove('hidden');
+                tabStats.classList.add('border-yellow-500', 'text-yellow-500');
+                tabStats.classList.remove('border-transparent', 'text-zinc-400');
+                loadStats();
             } else {
-                document.getElementById('uploadTab').classList.add('hidden');
-                document.getElementById('setupTab').classList.remove('hidden');
+                setupTab.classList.remove('hidden');
                 tabSetup.classList.add('border-yellow-500', 'text-yellow-500');
                 tabSetup.classList.remove('border-transparent', 'text-zinc-400');
             }
         }
+
+        // Load statistics
+        function loadStats() {
+            if (!supabaseClient) {
+                document.getElementById('topAppsList').innerHTML = '<p class="text-red-400 text-center py-4">Configure o Supabase primeiro.</p>';
+                return;
+            }
+
+            // Load apps stats
+            supabaseClient.from('aplicativos').select('*').neq('ativo', false).then(function (response) {
+                if (response.error) return;
+
+                var apps = response.data || [];
+                document.getElementById('statTotalApps').textContent = apps.length;
+
+                // Calculate total downloads
+                var totalDownloads = 0;
+                for (var i = 0; i < apps.length; i++) {
+                    totalDownloads += apps[i].downloads || 0;
+                }
+                document.getElementById('statTotalDownloads').textContent = totalDownloads;
+
+                // Top 5 apps by downloads
+                apps.sort(function (a, b) {
+                    return (b.downloads || 0) - (a.downloads || 0);
+                });
+
+                var topApps = apps.slice(0, 5);
+                if (topApps.length === 0) {
+                    document.getElementById('topAppsList').innerHTML = '<p class="text-zinc-500 text-center py-4">Nenhum app ainda.</p>';
+                } else {
+                    var html = '';
+                    for (var j = 0; j < topApps.length; j++) {
+                        var app = topApps[j];
+                        html += '<div class="flex items-center justify-between p-2 bg-zinc-950 rounded">';
+                        html += '<span class="text-zinc-50">' + (j + 1) + '. ' + app.nome + '</span>';
+                        html += '<span class="text-blue-400">' + (app.downloads || 0) + ' downloads</span>';
+                        html += '</div>';
+                    }
+                    document.getElementById('topAppsList').innerHTML = html;
+                }
+            });
+
+            // Load ratings stats
+            supabaseClient.from('avaliacoes').select('positivo').then(function (response) {
+                if (response.error) return;
+
+                var ratings = response.data || [];
+                var positive = 0;
+                var negative = 0;
+
+                for (var i = 0; i < ratings.length; i++) {
+                    if (ratings[i].positivo) {
+                        positive++;
+                    } else {
+                        negative++;
+                    }
+                }
+
+                document.getElementById('statPositiveRatings').textContent = positive;
+                document.getElementById('statNegativeRatings').textContent = negative;
+            });
+
+            // Also load storage stats
+            loadStorageStats();
+        }
+
+        // Load storage statistics
+        function loadStorageStats() {
+            // Load Supabase Storage usage
+            loadSupabaseStorageUsage();
+
+            // Load GitHub Releases data
+            loadGitHubReleasesData();
+        }
+
+        // Load Supabase Storage usage from app-icons bucket
+        function loadSupabaseStorageUsage() {
+            if (!supabaseClient) {
+                document.getElementById('supabaseStorageUsed').textContent = 'Não configurado';
+                return;
+            }
+
+            supabaseClient.storage.from('app-icons').list('', { limit: 1000 }).then(function (response) {
+                if (response.error) {
+                    document.getElementById('supabaseStorageUsed').textContent = 'Erro';
+                    console.log('Storage error:', response.error);
+                    return;
+                }
+
+                var files = response.data || [];
+                var totalBytes = 0;
+                var fileCount = 0;
+
+                for (var i = 0; i < files.length; i++) {
+                    if (files[i].metadata && files[i].metadata.size) {
+                        totalBytes += files[i].metadata.size;
+                        fileCount++;
+                    }
+                }
+
+                // Format size
+                var sizeText = formatBytes(totalBytes);
+                document.getElementById('supabaseStorageUsed').textContent = sizeText + ' (' + fileCount + ' ícones)';
+
+                // Update progress bar (1GB = 1073741824 bytes)
+                var percentage = (totalBytes / 1073741824) * 100;
+                document.getElementById('supabaseStorageBar').style.width = Math.min(percentage, 100) + '%';
+            });
+        }
+
+        // Load GitHub Releases data
+        function loadGitHubReleasesData() {
+            var githubToken = localStorage.getItem('githubToken');
+            var githubRepo = localStorage.getItem('githubRepo');
+
+            if (!githubToken || !githubRepo) {
+                document.getElementById('githubReleasesCount').textContent = 'Não configurado';
+                document.getElementById('githubTotalDownloads').textContent = '-';
+                return;
+            }
+
+            var url = 'https://api.github.com/repos/' + githubRepo + '/releases?per_page=100';
+
+            fetch(url, {
+                headers: {
+                    'Authorization': 'token ' + githubToken,
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+            })
+                .then(function (response) {
+                    if (!response.ok) throw new Error('GitHub API error');
+                    return response.json();
+                })
+                .then(function (releases) {
+                    document.getElementById('githubReleasesCount').textContent = releases.length + ' releases';
+
+                    var totalDownloads = 0;
+                    for (var i = 0; i < releases.length; i++) {
+                        var assets = releases[i].assets || [];
+                        for (var j = 0; j < assets.length; j++) {
+                            totalDownloads += assets[j].download_count || 0;
+                        }
+                    }
+
+                    document.getElementById('githubTotalDownloads').textContent = totalDownloads + ' downloads';
+                })
+                .catch(function (error) {
+                    console.log('GitHub API error:', error);
+                    document.getElementById('githubReleasesCount').textContent = 'Erro';
+                    document.getElementById('githubTotalDownloads').textContent = '-';
+                });
+        }
+
+        // Format bytes to human readable
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            var k = 1024;
+            var sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            var i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // Export data
+        function exportData(format) {
+            if (!supabaseClient) {
+                alert('Configure o Supabase primeiro.');
+                return;
+            }
+
+            supabaseClient.from('aplicativos').select('*').then(function (response) {
+                if (response.error) {
+                    alert('Erro ao exportar dados.');
+                    return;
+                }
+
+                var apps = response.data || [];
+                var content = '';
+                var filename = '';
+                var mimeType = '';
+
+                if (format === 'json') {
+                    content = JSON.stringify(apps, null, 2);
+                    filename = 'apps_export_' + new Date().toISOString().split('T')[0] + '.json';
+                    mimeType = 'application/json';
+                } else if (format === 'csv') {
+                    // CSV header
+                    var headers = ['id', 'nome', 'versao', 'versao_android', 'descricao', 'categoria', 'tamanho_mb', 'downloads', 'ativo', 'data_upload'];
+                    content = headers.join(',') + '\n';
+
+                    // CSV rows
+                    for (var i = 0; i < apps.length; i++) {
+                        var app = apps[i];
+                        var row = [
+                            app.id,
+                            '"' + (app.nome || '').replace(/"/g, '""') + '"',
+                            app.versao || '',
+                            app.versao_android || '',
+                            '"' + (app.descricao || '').replace(/"/g, '""').replace(/\n/g, ' ') + '"',
+                            app.categoria || '',
+                            app.tamanho_mb || '',
+                            app.downloads || 0,
+                            app.ativo !== false ? 'true' : 'false',
+                            app.data_upload || ''
+                        ];
+                        content += row.join(',') + '\n';
+                    }
+                    filename = 'apps_export_' + new Date().toISOString().split('T')[0] + '.csv';
+                    mimeType = 'text/csv';
+                }
+
+                downloadFile(content, filename, mimeType);
+            });
+        }
+
+        // Export ratings
+        function exportRatings() {
+            if (!supabaseClient) {
+                alert('Configure o Supabase primeiro.');
+                return;
+            }
+
+            supabaseClient.from('avaliacoes').select('*, aplicativos(nome)').then(function (response) {
+                if (response.error) {
+                    alert('Erro ao exportar avaliações.');
+                    return;
+                }
+
+                var ratings = response.data || [];
+                var content = JSON.stringify(ratings, null, 2);
+                var filename = 'avaliacoes_export_' + new Date().toISOString().split('T')[0] + '.json';
+                downloadFile(content, filename, 'application/json');
+            });
+        }
+
+        // Download file helper
+        function downloadFile(content, filename, mimeType) {
+            var blob = new Blob([content], { type: mimeType });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // Load apps for management
+        function loadManageApps() {
+            if (!supabaseClient) {
+                document.getElementById('manageAppsList').innerHTML = '<p class="text-red-400 text-center py-4">Configure o Supabase primeiro.</p>';
+                return;
+            }
+
+            var showInactive = document.getElementById('showInactive').checked;
+            var query = supabaseClient.from('aplicativos').select('*').order('data_upload', { ascending: false });
+
+            if (!showInactive) {
+                query = query.neq('ativo', false);
+            }
+
+            query.then(function (response) {
+                if (response.error) {
+                    document.getElementById('manageAppsList').innerHTML = '<p class="text-red-400 text-center py-4">Erro ao carregar apps.</p>';
+                    return;
+                }
+
+                var apps = response.data || [];
+                if (apps.length === 0) {
+                    document.getElementById('manageAppsList').innerHTML = '<p class="text-zinc-500 text-center py-8">Nenhum aplicativo encontrado.</p>';
+                    return;
+                }
+
+                var html = '';
+                for (var i = 0; i < apps.length; i++) {
+                    var app = apps[i];
+                    var isActive = app.ativo !== false;
+                    var statusBadge = isActive
+                        ? '<span class="px-2 py-1 text-xs bg-green-900 text-green-300 rounded">Ativo</span>'
+                        : '<span class="px-2 py-1 text-xs bg-red-900 text-red-300 rounded">Inativo</span>';
+
+                    html += '<div class="flex items-center justify-between p-3 bg-zinc-950 border border-zinc-800 rounded-md">';
+                    html += '  <div class="flex-1 min-w-0">';
+                    html += '    <div class="flex items-center gap-2">';
+                    html += '      <span class="font-medium text-zinc-50 truncate">' + app.nome + '</span>';
+                    html += '      ' + statusBadge;
+                    html += '    </div>';
+                    html += '    <p class="text-xs text-zinc-500">v' + (app.versao || '?') + ' • ' + (app.categoria || 'Sem categoria') + '</p>';
+                    html += '  </div>';
+                    html += '  <div class="flex gap-2">';
+                    if (!isActive) {
+                        html += '    <button onclick="toggleAppStatus(\'' + app.id + '\', true)" class="focusable px-3 py-1 text-sm bg-green-600 hover:bg-green-500 text-white rounded">Ativar</button>';
+                    }
+                    html += '    <button onclick="openEditModal(\'' + app.id + '\')" class="focusable px-3 py-1 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded">✏️ Editar</button>';
+                    html += '    <button onclick="openDeleteModal(\'' + app.id + '\', \'' + app.nome.replace(/'/g, "\\'") + '\')" class="focusable px-3 py-1 text-sm bg-red-600 hover:bg-red-500 text-white rounded">🗑️</button>';
+                    html += '  </div>';
+                    html += '</div>';
+                }
+                document.getElementById('manageAppsList').innerHTML = html;
+            });
+        }
+
+        // Open edit modal
+        function openEditModal(appId) {
+            supabaseClient.from('aplicativos').select('*').eq('id', appId).single().then(function (response) {
+                if (response.error) {
+                    alert('Erro ao carregar dados do app');
+                    return;
+                }
+                var app = response.data;
+                document.getElementById('editAppId').value = app.id;
+                document.getElementById('editAppName').value = app.nome || '';
+                document.getElementById('editAppVersion').value = app.versao || '';
+                document.getElementById('editAppVersionAndroid').value = app.versao_android || '';
+                document.getElementById('editAppVersionDate').value = app.data_versao || '';
+                document.getElementById('editAppCategory').value = app.categoria || '';
+                document.getElementById('editAppUploadDate').value = app.data_upload ? app.data_upload.split('T')[0] : '';
+                document.getElementById('editAppChangelog').value = app.changelog || '';
+                document.getElementById('editAppModal').classList.remove('hidden');
+            });
+        }
+
+        function closeEditModal() {
+            document.getElementById('editAppModal').classList.add('hidden');
+            document.getElementById('editAppStatus').classList.add('hidden');
+        }
+
+        // Save app edit
+        function saveAppEdit() {
+            var appId = document.getElementById('editAppId').value;
+            var pin = localStorage.getItem('adminPin'); // Retrieve PIN
+
+            if (!pin) {
+                showStatus('editAppStatus', 'Sessão inválida. Faça login novamente.', 'error');
+                return;
+            }
+
+            // Data to update
+            var params = {
+                p_id: appId,
+                p_pin: pin,
+                p_nome: document.getElementById('editAppName').value,
+                p_versao: document.getElementById('editAppVersion').value,
+                p_versao_android: document.getElementById('editAppVersionAndroid').value || null,
+                p_data_versao: document.getElementById('editAppVersionDate').value || null,
+                p_descricao: document.getElementById('editAppDescription').value || null,
+                p_categoria: document.getElementById('editAppCategory').value || null,
+                p_data_upload: document.getElementById('editAppUploadDate').value || null,
+                p_changelog: document.getElementById('editAppChangelog').value || null
+            };
+
+            supabaseClient.rpc('admin_update_app', params).then(function (response) {
+                if (response.error) {
+                    showStatus('editAppStatus', 'Erro: ' + response.error.message, 'error');
+                    return;
+                }
+
+                if (response.data === true) {
+                    showStatus('editAppStatus', 'Alterações salvas com sucesso!', 'success');
+                    setTimeout(function () {
+                        closeEditModal();
+                        loadManageApps();
+                    }, 1000);
+                } else {
+                    showStatus('editAppStatus', 'Erro: PIN inválido ou permissão negada.', 'error');
+                }
+            }).catch(function (error) {
+                showStatus('editAppStatus', 'Erro inesperado: ' + error.message, 'error');
+            });
+        }
+
+        // Open delete modal
+        function openDeleteModal(appId, appName) {
+            document.getElementById('deleteAppId').value = appId;
+            document.getElementById('deleteAppName').textContent = 'O que deseja fazer com "' + appName + '"?';
+            document.getElementById('deleteAppModal').classList.remove('hidden');
+            document.getElementById('deleteAppStatus').classList.add('hidden');
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteAppModal').classList.add('hidden');
+        }
+
+        // Toggle app status (activate/deactivate)
+        function toggleAppStatus(appIdOrActive, activate) {
+            var appId;
+            if (typeof appIdOrActive === 'boolean') {
+                appId = document.getElementById('deleteAppId').value;
+                activate = appIdOrActive;
+            } else {
+                appId = appIdOrActive;
+            }
+
+            supabaseClient.from('aplicativos').update({ ativo: activate }).eq('id', appId).then(function (response) {
+                if (response.error) {
+                    showStatus('deleteAppStatus', 'Erro: ' + response.error.message, 'error');
+                    return;
+                }
+                if (!activate) {
+                    showStatus('deleteAppStatus', 'App desativado com sucesso!', 'success');
+                }
+                setTimeout(function () {
+                    closeDeleteModal();
+                    loadManageApps();
+                }, 500);
+            });
+        }
+
+        // Delete app permanently
+        function deleteAppPermanently() {
+            var appId = document.getElementById('deleteAppId').value;
+            var pin = localStorage.getItem('adminPin');
+
+            if (!confirm('ATENÇÃO: Esta ação é irreversível. O app será excluído permanentemente. Deseja continuar?')) {
+                return;
+            }
+
+            if (!pin) {
+                alert('Sessão inválida. Por favor faça login novamente.');
+                logout();
+                return;
+            }
+
+            // Usar RPC segura
+            supabaseClient
+                .rpc('admin_delete_app', {
+                    p_app_id: appId,
+                    p_pin: pin
+                })
+                .then(function (response) {
+                    if (response.error) {
+                        showStatus('deleteAppStatus', 'Erro: ' + response.error.message, 'error');
+                        return;
+                    }
+
+                    if (response.data === true) {
+                        showStatus('deleteAppStatus', 'App excluído permanentemente!', 'success');
+                        setTimeout(function () {
+                            closeDeleteModal();
+                            loadManageApps();
+                        }, 1000);
+                    } else {
+                        showStatus('deleteAppStatus', 'Erro: PIN inválido ou permissão negada.', 'error');
+                    }
+                })
+                .catch(function (err) {
+                    showStatus('deleteAppStatus', 'Erro inesperado.', 'error');
+                    console.error(err);
+                });
+        }
+
+        // Rating modal functions
+        function openRatingModal(appId, appName) {
+            document.getElementById('ratingAppId').value = appId;
+            document.getElementById('ratingAppName').textContent = appName;
+            document.getElementById('ratingStep1').classList.remove('hidden');
+            document.getElementById('ratingStep2').classList.add('hidden');
+            document.getElementById('ratingNotTested').classList.add('hidden');
+            document.getElementById('ratingStatus').classList.add('hidden');
+            document.getElementById('ratingModal').classList.remove('hidden');
+        }
+
+        function closeRatingModal() {
+            document.getElementById('ratingModal').classList.add('hidden');
+        }
+
+        function confirmTested(tested) {
+            if (tested) {
+                document.getElementById('ratingStep1').classList.add('hidden');
+                document.getElementById('ratingStep2').classList.remove('hidden');
+            } else {
+                document.getElementById('ratingStep1').classList.add('hidden');
+                document.getElementById('ratingNotTested').classList.remove('hidden');
+            }
+        }
+
+        // Generate device ID for rating
+        function getDeviceId() {
+            var deviceId = localStorage.getItem('deviceId');
+            if (!deviceId) {
+                deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+                localStorage.setItem('deviceId', deviceId);
+            }
+            return deviceId;
+        }
+
+        // Submit rating (from standalone modal)
+        function submitRating(positive) {
+            var appId = document.getElementById('ratingAppId').value;
+            if (!appId || !supabaseClient) return;
+
+            var deviceId = getDeviceId();
+
+            showStatus('ratingStatus', 'Salvando avaliação...', 'info');
+
+            supabaseClient.from('avaliacoes').upsert({
+                aplicativo_id: appId,
+                device_id: deviceId,
+                positivo: positive,
+                testou_app: true
+            }, { onConflict: 'aplicativo_id,device_id' }).then(function (response) {
+                if (response.error) {
+                    console.error('Erro avaliação:', response.error);
+                    showStatus('ratingStatus', 'Erro: ' + response.error.message, 'error');
+                    return;
+                }
+                document.getElementById('ratingStep2').classList.add('hidden');
+                showStatus('ratingStatus', positive ? '👍 Obrigado pelo feedback positivo!' : '👎 Obrigado pelo feedback!', 'success');
+                setTimeout(function () {
+                    closeRatingModal();
+                    renderStore();
+                }, 1500);
+            }).catch(function (err) {
+                showStatus('ratingStatus', 'Erro de conexão.', 'error');
+            });
+        }
+
+
+        // Open app details modal
+        function openDetailsModal(appId) {
+            var app = null;
+            for (var i = 0; i < allApps.length; i++) {
+                if (allApps[i].id === appId) {
+                    app = allApps[i];
+                    break;
+                }
+            }
+            if (!app) return;
+
+            document.getElementById('detailsAppId').value = app.id;
+            document.getElementById('detailsAppName').textContent = app.nome;
+            document.getElementById('detailsAppDescription').textContent = app.descricao || 'Sem descrição';
+            document.getElementById('detailsAppCategory').textContent = app.categoria || 'Sem categoria';
+            document.getElementById('detailsAppSize').textContent = app.tamanho_mb ? app.tamanho_mb + ' MB' : 'N/A';
+            document.getElementById('detailsAppVersion').textContent = app.versao ? 'Versão do Sistema: ' + app.versao : '';
+            document.getElementById('detailsAppVersionAndroid').textContent = app.versao_android ? 'Versão Android: ' + app.versao_android : '';
+
+            // Dates
+            var versionDate = app.data_versao ? new Date(app.data_versao).toLocaleDateString('pt-BR') : 'Não informada';
+            var uploadDate = app.data_upload ? new Date(app.data_upload).toLocaleDateString('pt-BR') : 'Não informada';
+
+            document.getElementById('detailsAppDate').textContent = 'Lançamento original: ' + versionDate;
+            document.getElementById('detailsUploadDate').textContent = 'Subido na loja em: ' + uploadDate;
+
+            // Changelog
+            if (app.changelog) {
+                document.getElementById('detailsChangelogSection').classList.remove('hidden');
+                document.getElementById('detailsAppChangelog').textContent = app.changelog;
+            } else {
+                document.getElementById('detailsChangelogSection').classList.add('hidden');
+            }
+
+            // Icon
+            var iconHtml = app.icone_url
+                ? '<img src="' + app.icone_url + '" class="w-20 h-20 object-cover">'
+                : generateFallbackIcon(app.nome);
+            document.getElementById('detailsAppIcon').innerHTML = iconHtml;
+
+            // Ratings
+            var rating = allRatings[app.id] || { positivo: 0, negativo: 0 };
+            document.getElementById('detailsPositive').textContent = rating.positivo;
+            document.getElementById('detailsNegative').textContent = rating.negativo;
+
+            // Downloads
+            var downloads = app.downloads || 0;
+            document.getElementById('detailsDownloads').textContent = downloads + ' download' + (downloads !== 1 ? 's' : '');
+
+            // Download button
+            document.getElementById('detailsDownloadBtn').href = app.apk_url;
+
+            // Load version history
+            loadVersionHistory(app.id, app.nome);
+
+            document.getElementById('appDetailsModal').classList.remove('hidden');
+        }
+
+        // Load version history for an app
+        function loadVersionHistory(currentAppId, appName) {
+            document.getElementById('versionHistorySection').classList.add('hidden');
+            document.getElementById('versionHistoryList').innerHTML = '<p class="text-zinc-500 text-sm">Carregando...</p>';
+
+            if (!supabaseClient) return;
+
+            // Find all versions of the same app by name
+            supabaseClient
+                .from('aplicativos')
+                .select('id, versao, versao_android, data_upload, apk_url')
+                .eq('nome', appName)
+                .neq('id', currentAppId)
+                .neq('ativo', false)
+                .order('data_upload', { ascending: false })
+                .then(function (response) {
+                    if (response.error || !response.data || response.data.length === 0) {
+                        document.getElementById('versionHistorySection').classList.add('hidden');
+                        return;
+                    }
+
+                    var versions = response.data;
+                    var html = '';
+
+                    for (var i = 0; i < versions.length; i++) {
+                        var v = versions[i];
+                        var versionText = v.versao ? 'v' + v.versao : 'Versão antiga';
+                        if (v.versao_android) versionText += ' (Android: ' + v.versao_android + ')';
+
+                        var dateText = '';
+                        if (v.data_upload) {
+                            var d = new Date(v.data_upload);
+                            dateText = d.toLocaleDateString('pt-BR');
+                        }
+
+                        html += '<div class="flex items-center justify-between p-2 bg-zinc-950 rounded">';
+                        html += '  <div>';
+                        html += '    <span class="text-zinc-300 text-sm">' + versionText + '</span>';
+                        if (dateText) html += '    <span class="text-zinc-600 text-xs ml-2">' + dateText + '</span>';
+                        html += '  </div>';
+                        html += '  <a href="' + v.apk_url + '" download onclick="trackDownloadFromHome(\'' + v.id + '\')" class="focusable px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 text-zinc-50 rounded">Download</a>';
+                        html += '</div>';
+                    }
+
+                    document.getElementById('versionHistoryList').innerHTML = html;
+                    document.getElementById('versionHistorySection').classList.remove('hidden');
+                });
+        }
+
+        function closeDetailsModal() {
+            document.getElementById('appDetailsModal').classList.add('hidden');
+        }
+
+        // Rate from details modal (skip test confirmation for simplicity)
+        function rateFromDetails(positive) {
+            var appId = document.getElementById('detailsAppId').value;
+            if (!appId || !supabaseClient) return;
+
+            var deviceId = getDeviceId();
+
+            console.log('Enviando avaliação:', { aplicativo_id: appId, device_id: deviceId, positivo: positive });
+
+            supabaseClient.from('avaliacoes').upsert({
+                aplicativo_id: appId,
+                device_id: deviceId,
+                positivo: positive,
+                testou_app: true
+            }, { onConflict: 'aplicativo_id,device_id' }).then(function (response) {
+                if (response.error) {
+                    console.error('Erro detalhes:', response.error);
+                    alert('Erro ao salvar avaliação: ' + response.error.message);
+                    return;
+                }
+                alert(positive ? '👍 Obrigado pelo feedback!' : '👎 Obrigado pelo feedback!');
+                closeDetailsModal();
+                renderStore();
+            }).catch(function (err) {
+                console.error('Erro de conexão:', err);
+                alert('Erro de conexão ao salvar avaliação.');
+            });
+        }
+
+        // Show Toast Notification
+        function showToast(message, type) {
+            var toast = document.getElementById("toast");
+            toast.className = "toast show";
+            if (type) toast.classList.add(type);
+            toast.textContent = message;
+            setTimeout(function () {
+                toast.className = toast.className.replace("show", "");
+                if (type) toast.classList.remove(type);
+            }, 3000);
+        }
+
+        // Track download
+        function trackDownload() {
+            var appId = document.getElementById('detailsAppId').value;
+            if (!appId || !supabaseClient) return;
+
+            console.log('Iniciando download (Modal) para app:', appId);
+            showToast("Iniciando download...", "success");
+
+            // Increment download counter via RPC
+            supabaseClient.rpc('increment_downloads', { app_id: appId }).then(function (response) {
+                if (response.error) {
+                    console.error('Erro download:', response.error);
+                } else {
+                    console.log('Download registrado');
+                    setTimeout(renderStore, 1000);
+                }
+            }).catch(function (err) {
+                console.error('Erro de conexão no download');
+            });
+        }
+
+        // Track download from home page (receives appId directly)
+        function trackDownloadFromHome(appId) {
+            if (!appId || !supabaseClient) return;
+
+            console.log('Iniciando download (Home) para app:', appId);
+            showToast("Download iniciado!", "success");
+
+            supabaseClient.rpc('increment_downloads', { app_id: appId }).then(function (response) {
+                if (response.error) {
+                    console.error('Erro download home:', response.error);
+                } else {
+                    console.log('Download registrado (home)');
+                }
+            }).catch(function (err) {
+                console.error('Erro de conexão no download (home)');
+            });
+        }
+
+
         // Save setup to localStorage
         function saveSetup() {
             var githubToken = document.getElementById('githubToken').value;
             var githubRepo = document.getElementById('githubRepo').value;
             var supabaseUrl = document.getElementById('supabaseUrl').value;
             var supabaseKey = document.getElementById('supabaseKey').value;
+
             if (!githubToken || !githubRepo || !supabaseUrl || !supabaseKey) {
                 showStatus('setupStatus', 'Preencha todos os campos.', 'error');
                 return;
             }
+
             localStorage.setItem('githubToken', githubToken);
             localStorage.setItem('githubRepo', githubRepo);
             localStorage.setItem('supabaseUrl', supabaseUrl);
             localStorage.setItem('supabaseKey', supabaseKey);
+
             // Reinitialize Supabase client
             loadSetup();
+
             showStatus('setupStatus', 'Configurações salvas com sucesso!', 'success');
         }
+
         // Load setup values into form
         function loadSetupValues() {
             document.getElementById('githubToken').value = localStorage.getItem('githubToken') || '';
@@ -603,28 +2072,35 @@
             document.getElementById('supabaseUrl').value = localStorage.getItem('supabaseUrl') || '';
             document.getElementById('supabaseKey').value = localStorage.getItem('supabaseKey') || '';
         }
+
         // Test GitHub connection and credentials
         function testGitHubConnection() {
             var githubToken = localStorage.getItem('githubToken');
             var githubRepo = localStorage.getItem('githubRepo');
+
             // Clear previous status
             showStatus('setupStatus', '', 'info');
+
             // Step 1: Validate credentials exist
             if (!githubToken || !githubRepo) {
                 showStatus('setupStatus', '❌ Erro: Configure GitHub Token e Repo primeiro!', 'error');
                 return;
             }
+
             // Step 2: Validate token format
             if (!githubToken.startsWith('ghp_') && !githubToken.startsWith('github_pat_')) {
                 showStatus('setupStatus', '⚠️ Aviso: Token GitHub não parece ter formato válido (deve começar com ghp_ ou github_pat_)', 'error');
                 return;
             }
+
             // Step 3: Validate repo format
             if (githubRepo.split('/').length !== 2) {
                 showStatus('setupStatus', '❌ Erro: Formato do repositório inválido. Use: usuario/repositorio', 'error');
                 return;
             }
+
             showStatus('setupStatus', '🔄 Testando conexão com GitHub API...', 'info');
+
             // Step 4: Test API connection
             fetch('https://api.github.com/repos/' + githubRepo, {
                 method: 'GET',
@@ -654,6 +2130,7 @@
                     message += '🔒 Privado: ' + (repo.private ? 'Sim' : 'Não') + '\\n';
                     message += '✍️ Proprietário: ' + repo.owner.login + '\\n';
                     message += '📝 Descrição: ' + (repo.description || 'Sem descrição');
+
                     showStatus('setupStatus', message, 'success');
                 })
                 .catch(function (error) {
@@ -663,165 +2140,132 @@
                     message += '• Token tem escopo "repo" ativado\\n';
                     message += '• Repositório existe e está acessível\\n';
                     message += '• Token não expirou';
+
                     showStatus('setupStatus', message, 'error');
                     console.error('Erro detalhado:', error);
                 });
         }
-        // Upload APK to GitHub Releases
+
+        // Upload APK via Supabase Edge Function (CORS-free)
         function uploadAPK() {
             var name = document.getElementById('appName').value;
             var version = document.getElementById('appVersion').value;
+            var versionAndroid = document.getElementById('appVersionAndroid').value;
+            var versionDate = document.getElementById('appVersionDate').value;
+            var uploadDate = document.getElementById('appUploadDate').value;
             var description = document.getElementById('appDescription').value;
             var category = document.getElementById('appCategory').value;
             var iconInput = document.getElementById('iconFile');
             var iconFile = iconInput.files[0];
             var fileInput = document.getElementById('apkFile');
             var file = fileInput.files[0];
+
             // Validation - only APK is required
             if (!file) {
                 showStatus('uploadStatus', 'Selecione o arquivo APK.', 'error');
                 return;
             }
+
             if (!supabaseClient) {
                 showStatus('uploadStatus', 'Configure o Supabase primeiro.', 'error');
                 return;
             }
+
             var githubToken = localStorage.getItem('githubToken');
             var githubRepo = localStorage.getItem('githubRepo');
+            var supabaseUrl = localStorage.getItem('supabaseUrl');
+            var supabaseKey = localStorage.getItem('supabaseKey');
+
             if (!githubToken || !githubRepo) {
                 showStatus('uploadStatus', 'Configure GitHub Token e Repo na aba Setup.', 'error');
                 return;
             }
+
             // Disable button
             var uploadBtn = document.getElementById('uploadBtn');
             uploadBtn.disabled = true;
             uploadBtn.innerHTML = '<div class="spinner mx-auto"></div>';
+
             // Step 0.1: Auto-fill name from APK filename if empty
             if (!name) {
                 name = file.name.replace('.apk', '').replace(/[_-]/g, ' ');
-                // Capitalize first letter
                 name = name.charAt(0).toUpperCase() + name.slice(1);
+                document.getElementById('appName').value = name;
                 showStatus('uploadStatus', 'Nome detectado do arquivo: ' + name, 'info');
             }
+
             var processUpload = function (finalVersion) {
                 version = finalVersion;
-                var iconUrl = null;
-                var uploadPromise = Promise.resolve();
-                // Step 1: Upload icon to Supabase Storage (if provided)
+                document.getElementById('appVersion').value = version;
+
+                showStatus('uploadStatus', 'Preparando upload via Edge Function...', 'info');
+
+                // Create FormData with all fields
+                var formData = new FormData();
+                formData.append('apk', file);
+                formData.append('name', name);
+                formData.append('version', version);
+                formData.append('versionAndroid', versionAndroid || '');
+                formData.append('versionDate', versionDate || '');
+                formData.append('uploadDate', uploadDate || new Date().toISOString().split('T')[0]);
+                formData.append('description', description || '');
+                formData.append('category', category || '');
+                // Changelog is mapped from the specific field, or description if empty (optional logic, but stick to explict field)
+                formData.append('changelog', document.getElementById('appChangelog').value || '');
+
                 if (iconFile) {
-                    showStatus('uploadStatus', 'Fazendo upload do ícone...', 'info');
-                    var iconFileName = Date.now() + '_' + iconFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-                    uploadPromise = supabaseClient.storage
-                        .from('app-icons')
-                        .upload(iconFileName, iconFile, {
-                            cacheControl: '3600',
-                            upsert: false
-                        })
-                        .then(function (response) {
-                            if (response.error) {
-                                throw new Error('Erro ao fazer upload do ícone: ' + response.error.message);
-                            }
-                            // Get public URL
-                            var publicUrlData = supabaseClient.storage
-                                .from('app-icons')
-                                .getPublicUrl(iconFileName);
-                            iconUrl = publicUrlData.data.publicUrl;
-                            showStatus('uploadStatus', 'Ícone enviado! Fazendo upload para GitHub Releases...', 'info');
-                        });
-                } else {
-                    showStatus('uploadStatus', 'Fazendo upload para GitHub Releases...', 'info');
+                    formData.append('icon', iconFile);
                 }
-                uploadPromise
-                    .then(function () {
-                        // Step 2: Create release
-                        var releaseTag = 'v' + version + '-' + Date.now();
-                        var releaseData = {
-                            tag_name: releaseTag,
-                            name: name + ' v' + version,
-                            body: description || 'Release via APK Store',
-                            draft: false,
-                            prerelease: false
-                        };
-                        return fetch('https://api.github.com/repos/' + githubRepo + '/releases', {
-                            method: 'POST',
-                            headers: {
-                                'Authorization': 'token ' + githubToken,
-                                'Content-Type': 'application/json',
-                                'Accept': 'application/vnd.github.v3+json'
-                            },
-                            body: JSON.stringify(releaseData)
-                        });
-                    })
+
+                // Send to Edge Function
+                var edgeFunctionUrl = supabaseUrl + '/functions/v1/upload-apk';
+
+                showStatus('uploadStatus', 'Enviando para Edge Function...', 'info');
+
+                fetch(edgeFunctionUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + supabaseKey,
+                        'x-github-token': githubToken,
+                        'x-github-repo': githubRepo,
+                        'x-supabase-url': supabaseUrl,
+                        'x-supabase-key': supabaseKey
+                    },
+                    body: formData
+                })
                     .then(function (response) {
+                        if (!response.ok) {
+                            return response.json().then(function (data) {
+                                throw new Error(data.error || 'Erro ' + response.status + ': ' + (data.message || response.statusText));
+                            }).catch(function () {
+                                throw new Error('Erro ' + response.status + ': ' + response.statusText);
+                            });
+                        }
                         return response.json();
                     })
-                    .then(function (release) {
-                        // Check for errors in response
-                        if (release.message) {
-                            var errorMsg = 'Erro GitHub: ' + release.message;
-                            if (release.errors) {
-                                errorMsg += '\nDetalhes: ' + JSON.stringify(release.errors);
-                            }
-                            if (release.documentation_url) {
-                                errorMsg += '\nDoc: ' + release.documentation_url;
-                            }
-                            throw new Error(errorMsg);
+                    .then(function (result) {
+                        if (!result.success) {
+                            throw new Error(result.error || 'O servidor retornou falha sem mensagem.');
                         }
-                        
-                        if (!release.upload_url) {
-                            throw new Error('Falha ao criar release. Resposta: ' + JSON.stringify(release));
-                        }
-                        showStatus('uploadStatus', 'Release criada. Fazendo upload do APK...', 'info');
-                        // Step 3: Upload asset
-                        var uploadUrl = release.upload_url.replace('{?name,label}', '?name=' + encodeURIComponent(file.name));
-                        return fetch(uploadUrl, {
-                            method: 'POST',
-                            headers: {
-                                'Authorization': 'token ' + githubToken,
-                                'Content-Type': 'application/vnd.android.package-archive',
-                                'Accept': 'application/vnd.github.v3+json'
-                            },
-                            body: file
-                        });
-                    })
-                    .then(function (response) {
-                        return response.json();
-                    })
-                    .then(function (asset) {
-                        if (!asset.browser_download_url) {
-                            throw new Error('Falha ao fazer upload do APK.');
-                        }
-                        showStatus('uploadStatus', 'APK enviado. Salvando no Supabase...', 'info');
-                        // Step 4: Save to Supabase with ALL fields
-                        var fileSizeMB = (file.size / 1024 / 1024).toFixed(2);
-                        return supabaseClient
-                            .from('aplicativos')
-                            .insert([{
-                                nome: name,
-                                versao: version,
-                                descricao: description || null,
-                                categoria: category || null,
-                                icone_url: iconUrl || null,
-                                apk_url: asset.browser_download_url,
-                                tamanho_mb: parseFloat(fileSizeMB),
-                                data_upload: new Date().toISOString()
-                            }]);
-                    })
-                    .then(function (response) {
-                        if (response.error) {
-                            throw new Error('Erro ao salvar no Supabase: ' + response.error.message);
-                        }
+
                         showStatus('uploadStatus', 'Upload concluído com sucesso! (v' + version + ')', 'success');
+
                         // Clear form
                         document.getElementById('appName').value = '';
                         document.getElementById('appVersion').value = '';
+                        document.getElementById('appVersionAndroid').value = '';
+                        document.getElementById('appVersionDate').value = '';
                         document.getElementById('appDescription').value = '';
                         document.getElementById('appCategory').value = '';
                         document.getElementById('iconFile').value = '';
                         fileInput.value = '';
-                        // Re-enable button
+
                         uploadBtn.disabled = false;
                         uploadBtn.textContent = 'Upload para GitHub Releases';
+
+                        if (currentView === 'store') {
+                            renderStore();
+                        }
                     })
                     .catch(function (error) {
                         console.error('Erro no upload:', error);
@@ -830,10 +2274,11 @@
                         uploadBtn.textContent = 'Upload para GitHub Releases';
                     });
             };
+
             // Step 0.2: Auto-detect version if empty
             if (!version) {
                 showStatus('uploadStatus', 'Detectando versão automaticamente...', 'info');
-                // Query existing versions of this app
+
                 supabaseClient
                     .from('aplicativos')
                     .select('versao')
@@ -845,12 +2290,12 @@
                             processUpload('1.0');
                             return;
                         }
+
                         var existingVersions = response.data || [];
+
                         if (existingVersions.length === 0) {
-                            // No existing versions, start with 1.0
                             processUpload('1.0');
                         } else {
-                            // Find highest version and increment
                             var maxVersion = 1.0;
                             for (var i = 0; i < existingVersions.length; i++) {
                                 var v = parseFloat(existingVersions[i].versao);
@@ -858,7 +2303,6 @@
                                     maxVersion = v;
                                 }
                             }
-                            // Increment by 0.1
                             var newVersion = (maxVersion + 0.1).toFixed(1);
                             processUpload(newVersion);
                         }
@@ -868,34 +2312,40 @@
                         processUpload('1.0');
                     });
             } else {
-                // Version provided, proceed directly
                 processUpload(version);
             }
         }
+
         // Show status message
         function showStatus(elementId, message, type) {
             var element = document.getElementById(elementId);
             element.classList.remove('hidden');
+
             var bgColor = type === 'error' ? 'bg-red-950 border-red-900 text-red-200' :
                 type === 'success' ? 'bg-green-950 border-green-900 text-green-200' :
                     'bg-blue-950 border-blue-900 text-blue-200';
+
             element.className = 'mt-4 p-3 rounded-md text-sm border ' + bgColor;
             element.textContent = message;
         }
+
         // Show error message
         function showError(elementId, message) {
             var element = document.getElementById(elementId);
             element.classList.remove('hidden');
             element.textContent = message;
         }
+
         // Open help modal
         function openHelpModal() {
             document.getElementById('helpModal').classList.remove('hidden');
         }
+
         // Close help modal
         function closeHelpModal() {
             document.getElementById('helpModal').classList.add('hidden');
         }
+
         // Open setup modal
         function openSetupModal() {
             // Load existing values if any
@@ -903,37 +2353,48 @@
             document.getElementById('setupModalSupabaseKey').value = localStorage.getItem('supabaseKey') || '';
             document.getElementById('setupModalGithubToken').value = localStorage.getItem('githubToken') || '';
             document.getElementById('setupModalGithubRepo').value = localStorage.getItem('githubRepo') || '';
+
             document.getElementById('setupModal').classList.remove('hidden');
         }
+
         // Close setup modal
         function closeSetupModal() {
             document.getElementById('setupModal').classList.add('hidden');
         }
+
         // Save setup from modal
         function saveSetupFromModal() {
             var supabaseUrl = document.getElementById('setupModalSupabaseUrl').value;
             var supabaseKey = document.getElementById('setupModalSupabaseKey').value;
             var githubToken = document.getElementById('setupModalGithubToken').value;
             var githubRepo = document.getElementById('setupModalGithubRepo').value;
+
             if (!supabaseUrl || !supabaseKey) {
                 showStatus('setupModalStatus', 'Preencha pelo menos a URL e a chave do Supabase.', 'error');
                 return;
             }
+
             localStorage.setItem('supabaseUrl', supabaseUrl);
             localStorage.setItem('supabaseKey', supabaseKey);
+
             if (githubToken) localStorage.setItem('githubToken', githubToken);
             if (githubRepo) localStorage.setItem('githubRepo', githubRepo);
+
             // Reinitialize Supabase client
             loadSetup();
+
             showStatus('setupModalStatus', 'Configurações salvas! Você já pode fazer login com o PIN.', 'success');
+
             setTimeout(function () {
                 closeSetupModal();
             }, 2000);
         }
+
         // Setup keyboard navigation for D-Pad
         function setupKeyboardNav() {
             var focusableElements = [];
             var currentFocusIndex = -1;
+
             // Update focusable elements list
             function updateFocusableElements() {
                 focusableElements = Array.prototype.slice.call(
@@ -942,10 +2403,13 @@
                     return el.offsetParent !== null; // Only visible elements
                 });
             }
+
             // Handle keyboard events
             document.addEventListener('keydown', function (e) {
                 updateFocusableElements();
+
                 if (focusableElements.length === 0) return;
+
                 // Arrow Down or Tab
                 if (e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey)) {
                     e.preventDefault();
@@ -963,6 +2427,7 @@
                     closeHelpModal();
                 }
             });
+
             // Track current focus
             document.addEventListener('focus', function (e) {
                 var index = focusableElements.indexOf(e.target);
@@ -971,6 +2436,7 @@
                 }
             }, true);
         }
+
         // Close modal on overlay click
         document.addEventListener('click', function (e) {
             if (e.target.classList.contains('modal-overlay')) {
@@ -978,6 +2444,35 @@
                 closeSetupModal();
             }
         });
+
+        // Real-time auto-fill for APK Name
+        document.addEventListener('DOMContentLoaded', function () {
+            var apkInput = document.getElementById('apkFile');
+            if (apkInput) {
+                apkInput.addEventListener('change', function (e) {
+                    var file = e.target.files[0];
+                    if (file) {
+                        var nameInput = document.getElementById('appName');
+                        if (!nameInput.value) {
+                            var name = file.name.replace('.apk', '').replace(/[_-]/g, ' ');
+                            name = name.charAt(0).toUpperCase() + name.slice(1);
+                            nameInput.value = name;
+                        }
+                    }
+                });
+            }
+        });
+    </script>
+    <script>
+        // PWA Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js')
+                    .then(reg => console.log('Service Worker registrado!'))
+                    .catch(err => console.log('Erro ao registrar SW:', err));
+            });
+        }
     </script>
 </body>
+
 </html>
