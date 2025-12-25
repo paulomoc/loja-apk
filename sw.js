@@ -1,8 +1,14 @@
-const CACHE_NAME = 'apk-store-v1';
+const CACHE_NAME = 'apk-store-v2';
 const ASSETS = [
     './',
-    'index.html',
-    'manifest.json'
+    './index.html',
+    './manifest.json',
+    './favicon.ico',
+    './favicon.png',
+    './favicon.svg',
+    './apple-touch-icon.png',
+    './icon-192.png',
+    './icon-512.png'
 ];
 
 // Install Service Worker
