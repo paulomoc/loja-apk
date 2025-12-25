@@ -1,8 +1,8 @@
 const CACHE_NAME = 'apk-store-v1';
 const ASSETS = [
-    '/',
-    '/index.html',
-    '/manifest.json'
+    './',
+    'index.html',
+    'manifest.json'
 ];
 
 // Install Service Worker
