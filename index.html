@@ -130,6 +130,27 @@
 </head>
 
 <body class="min-h-screen">
+    <!-- PWA Install Banner -->
+    <div id="installBanner"
+        class="hidden fixed bottom-6 left-4 right-4 z-[100] bg-zinc-900 border-2 border-yellow-500 p-4 rounded-xl shadow-2xl animate-bounce">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-12 h-12 bg-yellow-500 rounded-lg flex items-center justify-center text-2xl">📲</div>
+                <div>
+                    <h4 class="font-bold text-zinc-50">Instalar Loja APK</h4>
+                    <p class="text-xs text-zinc-400">Acesse como um aplicativo nativo</p>
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="closeInstallBanner()" class="px-3 py-2 text-zinc-400 text-sm">Depois</button>
+                <button onclick="installPWA()"
+                    class="focusable px-4 py-2 bg-yellow-500 text-zinc-950 font-bold rounded-lg text-sm">
+                    INSTALAR
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Store View -->
     <div id="storeView" class="container mx-auto px-4 py-6 max-w-6xl">
         <!-- Header -->
@@ -137,10 +158,6 @@
             <div class="flex items-center justify-between mb-4">
                 <h1 class="text-3xl font-bold text-zinc-50">Loja de APKs</h1>
                 <div class="flex gap-2">
-                    <button id="installAppBtn" onclick="installPWA()"
-                        class="hidden focusable px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-zinc-950 font-bold rounded-md text-sm animate-pulse">
-                        📲 Instalar App
-                    </button>
                     <button onclick="openHelpModal()"
                         class="focusable px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-50 rounded-md border border-zinc-700 text-sm">
                         Ajuda
@@ -2468,54 +2485,67 @@
         });
     </script>
     <script>
-        // PWA Install Logic
+        // PWA Install Logic - Banner Agressivo
         let deferredPrompt;
-        const installBtn = document.getElementById('installAppBtn');
+        const installBanner = document.getElementById('installBanner');
 
         window.addEventListener('beforeinstallprompt', (e) => {
-            // Prevent Chrome 67 and earlier from automatically showing the prompt
+            // 1. Previne o prompt nativo de aparecer sozinho (o navegador exige isso)
             e.preventDefault();
-            // Stash the event so it can be triggered later.
+
+            // 2. Guarda o evento para usar depois
             deferredPrompt = e;
-            // Update UI to notify the user they can add to home screen
-            if (installBtn) {
-                installBtn.classList.remove('hidden');
-                console.log('PWA install prompt intercepted');
+
+            // 3. Mostra o nosso banner customizado
+            if (installBanner) {
+                installBanner.classList.remove('hidden');
+                console.log("Banner de instalação ativado!");
             }
         });
 
         async function installPWA() {
-            if (!deferredPrompt) {
-                return;
-            }
-            // Show the prompt
-            deferredPrompt.prompt();
-            // Wait for the user to respond to the prompt
-            const { outcome } = await deferredPrompt.userChoice;
-            console.log(`User response to the install prompt: ${outcome}`);
+            if (!deferredPrompt) return;
 
-            // We've used the prompt, and can't use it again, discard it
+            // Mostra o prompt nativo do sistema
+            deferredPrompt.prompt();
+
+            // Verifica a escolha do usuário
+            const { outcome } = await deferredPrompt.userChoice;
+            console.log(`Usuário escolheu: ${outcome}`);
+
+            // Limpa o evento
             deferredPrompt = null;
 
-            // Hide the button regardless of outcome (until next visit/eligibility)
-            if (installBtn) {
-                installBtn.classList.add('hidden');
-            }
+            // Esconde o nosso banner
+            if (installBanner) installBanner.classList.add('hidden');
         }
 
+        function closeInstallBanner() {
+            if (installBanner) installBanner.classList.add('hidden');
+        }
+
+        // Se o app já estiver instalado, garante que o banner não apareça
         window.addEventListener('appinstalled', () => {
-            console.log('PWA was installed');
-            if (installBtn) {
-                installBtn.classList.add('hidden');
-            }
-            // Optional: Report installation to analytics
+            console.log('PWA instalado com sucesso!');
+            if (installBanner) installBanner.classList.add('hidden');
+            deferredPrompt = null;
         });
 
-        // Service Worker Registration
+        // Registro do Service Worker - Versão Otimizada
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js')
-                    .then(reg => console.log('Service Worker registrado!'))
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => {
+                        console.log('SW registrado com sucesso!', reg.scope);
+                        reg.onupdatefound = () => {
+                            const installingWorker = reg.installing;
+                            installingWorker.onstatechange = () => {
+                                if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    console.log('Nova versão disponível! Por favor, recarregue.');
+                                }
+                            };
+                        };
+                    })
                     .catch(err => console.log('Erro ao registrar SW:', err));
             });
         }
