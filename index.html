@@ -2538,7 +2538,7 @@
                 });
         }
 
-        // Upload APK via Supabase Edge Function (CORS-free)
+        // Upload APK diretamente para GitHub (suporta arquivos grandes)
         function uploadAPK() {
             var name = document.getElementById('appName').value;
             var version = document.getElementById('appVersion').value;
@@ -2547,6 +2547,7 @@
             var uploadDate = document.getElementById('appUploadDate').value;
             var description = document.getElementById('appDescription').value;
             var category = document.getElementById('appCategory').value;
+            var changelog = document.getElementById('appChangelog').value;
             var iconInput = document.getElementById('iconFile');
             var iconFile = iconInput.files[0];
             var fileInput = document.getElementById('apkFile');
@@ -2590,74 +2591,140 @@
                 version = finalVersion;
                 document.getElementById('appVersion').value = version;
 
-                showStatus('uploadStatus', 'Preparando upload via Edge Function...', 'info');
+                var fileSizeMB = (file.size / 1024 / 1024).toFixed(2);
+                showStatus('uploadStatus', 'Criando release no GitHub (' + fileSizeMB + ' MB)...', 'info');
 
-                // Create FormData with all fields
-                var formData = new FormData();
-                formData.append('apk', file);
-                formData.append('name', name);
-                formData.append('version', version);
-                formData.append('versionAndroid', versionAndroid || '');
-                formData.append('versionDate', versionDate || '');
-                formData.append('uploadDate', uploadDate || new Date().toISOString().split('T')[0]);
-                formData.append('description', description || '');
-                formData.append('category', category || '');
-                // Changelog is mapped from the specific field, or description if empty (optional logic, but stick to explict field)
-                formData.append('changelog', document.getElementById('appChangelog').value || '');
+                // Step 1: Create GitHub Release
+                var releaseTag = 'v' + version + '-' + Date.now();
 
-                if (iconFile) {
-                    formData.append('icon', iconFile);
-                }
-
-                // Send to Edge Function
-                var edgeFunctionUrl = supabaseUrl + '/functions/v1/upload-apk';
-
-                showStatus('uploadStatus', 'Enviando para Edge Function...', 'info');
-
-                fetch(edgeFunctionUrl, {
+                fetch('https://api.github.com/repos/' + githubRepo + '/releases', {
                     method: 'POST',
                     headers: {
-                        'Authorization': 'Bearer ' + supabaseKey,
-                        'x-github-token': githubToken,
-                        'x-github-repo': githubRepo,
-                        'x-supabase-url': supabaseUrl,
-                        'x-supabase-key': supabaseKey
+                        'Authorization': 'token ' + githubToken,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/vnd.github.v3+json'
                     },
-                    body: formData
+                    body: JSON.stringify({
+                        tag_name: releaseTag,
+                        name: name + ' v' + version,
+                        body: description || 'Release via APK Store',
+                        draft: false,
+                        prerelease: false
+                    })
                 })
                     .then(function (response) {
                         if (!response.ok) {
                             return response.json().then(function (data) {
-                                throw new Error(data.error || 'Erro ' + response.status + ': ' + (data.message || response.statusText));
-                            }).catch(function () {
-                                throw new Error('Erro ' + response.status + ': ' + response.statusText);
+                                throw new Error('Erro ao criar release: ' + (data.message || response.statusText));
                             });
                         }
                         return response.json();
                     })
+                    .then(function (release) {
+                        if (!release.upload_url) {
+                            throw new Error('Release criado mas upload_url está faltando');
+                        }
+
+                        showStatus('uploadStatus', 'Enviando APK (' + fileSizeMB + ' MB)... Por favor aguarde.', 'info');
+
+                        // Step 2: Upload APK to Release
+                        var uploadUrl = release.upload_url.replace('{?name,label}', '?name=' + encodeURIComponent(file.name));
+
+                        return file.arrayBuffer().then(function (buffer) {
+                            return fetch(uploadUrl, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': 'token ' + githubToken,
+                                    'Content-Type': 'application/vnd.android.package-archive',
+                                    'Accept': 'application/vnd.github.v3+json'
+                                },
+                                body: buffer
+                            }).then(function (assetResponse) {
+                                if (!assetResponse.ok) {
+                                    return assetResponse.json().then(function (data) {
+                                        throw new Error('Erro ao enviar APK: ' + (data.message || assetResponse.statusText));
+                                    });
+                                }
+                                return assetResponse.json();
+                            }).then(function (asset) {
+                                return { release: release, asset: asset };
+                            });
+                        });
+                    })
                     .then(function (result) {
-                        if (!result.success) {
-                            throw new Error(result.error || 'O servidor retornou falha sem mensagem.');
+                        var apkUrl = result.asset.browser_download_url;
+
+                        showStatus('uploadStatus', 'APK enviado! Salvando no banco de dados...', 'info');
+
+                        // Step 3: Upload icon to Supabase Storage (if provided)
+                        var iconUploadPromise = Promise.resolve(null);
+
+                        if (iconFile) {
+                            var iconFileName = Date.now() + '_' + iconFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                            iconUploadPromise = supabaseClient.storage
+                                .from('app-icons')
+                                .upload(iconFileName, iconFile, {
+                                    contentType: iconFile.type,
+                                    cacheControl: '3600'
+                                })
+                                .then(function (uploadResult) {
+                                    if (uploadResult.error) {
+                                        console.warn('Erro upload ícone:', uploadResult.error);
+                                        return null;
+                                    }
+                                    var urlResult = supabaseClient.storage.from('app-icons').getPublicUrl(iconFileName);
+                                    return urlResult.data.publicUrl;
+                                })
+                                .catch(function (err) {
+                                    console.warn('Erro ao processar ícone:', err);
+                                    return null;
+                                });
                         }
 
-                        showStatus('uploadStatus', 'Upload concluído com sucesso! (v' + version + ')', 'success');
+                        return iconUploadPromise.then(function (iconUrl) {
+                            // Step 4: Save to Supabase database
+                            return supabaseClient
+                                .from('aplicativos')
+                                .insert([{
+                                    nome: name,
+                                    versao: version,
+                                    versao_android: versionAndroid || null,
+                                    data_versao: versionDate || null,
+                                    descricao: description || null,
+                                    categoria: category || null,
+                                    changelog: changelog || null,
+                                    icone_url: iconUrl,
+                                    apk_url: apkUrl,
+                                    tamanho_mb: parseFloat(fileSizeMB),
+                                    data_upload: uploadDate ? new Date(uploadDate).toISOString() : new Date().toISOString()
+                                }])
+                                .then(function (dbResult) {
+                                    if (dbResult.error) {
+                                        console.warn('Erro ao salvar no banco:', dbResult.error);
+                                        showStatus('uploadStatus', 'APK enviado! (Aviso: erro ao salvar metadados: ' + dbResult.error.message + ')', 'success');
+                                    } else {
+                                        showStatus('uploadStatus', 'Upload concluído com sucesso! (v' + version + ')', 'success');
+                                    }
 
-                        // Clear form
-                        document.getElementById('appName').value = '';
-                        document.getElementById('appVersion').value = '';
-                        document.getElementById('appVersionAndroid').value = '';
-                        document.getElementById('appVersionDate').value = '';
-                        document.getElementById('appDescription').value = '';
-                        document.getElementById('appCategory').value = '';
-                        document.getElementById('iconFile').value = '';
-                        fileInput.value = '';
+                                    // Clear form
+                                    document.getElementById('appName').value = '';
+                                    document.getElementById('appVersion').value = '';
+                                    document.getElementById('appVersionAndroid').value = '';
+                                    document.getElementById('appVersionDate').value = '';
+                                    document.getElementById('appDescription').value = '';
+                                    document.getElementById('appCategory').value = '';
+                                    document.getElementById('appChangelog').value = '';
+                                    document.getElementById('iconFile').value = '';
+                                    fileInput.value = '';
 
-                        uploadBtn.disabled = false;
-                        uploadBtn.textContent = 'Upload para GitHub Releases';
+                                    uploadBtn.disabled = false;
+                                    uploadBtn.textContent = 'Upload para GitHub Releases';
 
-                        if (currentView === 'store') {
-                            renderStore();
-                        }
+                                    if (currentView === 'store') {
+                                        renderStore();
+                                    }
+                                });
+                        });
                     })
                     .catch(function (error) {
                         console.error('Erro no upload:', error);
