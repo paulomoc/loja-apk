@@ -929,14 +929,11 @@
 
         // Initialize application
         function initApp() {
-            setupRouter();
+            // IMPORTANTE: loadSetup deve ser chamado PRIMEIRO para inicializar o supabaseClient
+            // antes que setupRouter chame handleRoute() -> renderStore()
             loadSetup();
+            setupRouter();
             setupKeyboardNav();
-
-            // Load store data
-            if (window.location.hash === '' || window.location.hash === '#/') {
-                renderStore();
-            }
         }
 
         // Setup hash-based routing
