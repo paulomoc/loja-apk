@@ -937,56 +937,63 @@
         }
 
         // Setup hash-based routing
-        // --- IDEIA 2: AUTO-PARSING APK (Robusto) ---
-        async function handleAPKSelection(input) {
-            const file = input.files[0];
+        // --- IDEIA 2: AUTO-PARSING APK (Robusto) --- ES5 para TV Box
+        function handleAPKSelection(input) {
+            var file = input.files[0];
             if (!file) return;
 
-            const statusEl = document.getElementById('apkAutoInfo');
+            var statusEl = document.getElementById('apkAutoInfo');
             statusEl.classList.remove('hidden');
             statusEl.textContent = '🔄 Analisando estrutura do APK...';
             statusEl.className = 'text-xs text-blue-400 mt-1';
 
-            try {
-                const zip = new JSZip();
-                const loadedZip = await zip.loadAsync(file);
-                const manifestFile = loadedZip.file("AndroidManifest.xml");
-
+            var zip = new JSZip();
+            zip.loadAsync(file).then(function (loadedZip) {
+                var manifestFile = loadedZip.file("AndroidManifest.xml");
                 if (!manifestFile) throw new Error('Manifest não encontrado');
 
-                const buffer = await manifestFile.async("uint8array");
-
+                return manifestFile.async("uint8array");
+            }).then(function (buffer) {
                 // Decodificador AXML Simplificado (Extração de String Pool)
                 // O AndroidManifest binário guarda todas as strings em um "Pool" no início do arquivo
-                const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+                var view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 
                 // Header: Magic Number (0x00080003) e Size
                 if (view.getUint32(0, true) !== 0x00080003) throw new Error('Não é um AXML válido');
 
                 // String Pool Header (geralmente começa no offset 8)
-                let stringPoolOffset = 8;
-                let chunkType = view.getUint32(stringPoolOffset, true);
+                var stringPoolOffset = 8;
+                var chunkType = view.getUint32(stringPoolOffset, true);
                 if (chunkType !== 0x001C0001) throw new Error('String pool não encontrado');
 
-                let stringCount = view.getUint32(stringPoolOffset + 8, true);
-                let stringsOffset = stringPoolOffset + view.getUint32(stringPoolOffset + 20, true);
+                var stringCount = view.getUint32(stringPoolOffset + 8, true);
+                var stringsOffset = stringPoolOffset + view.getUint32(stringPoolOffset + 20, true);
 
-                let strings = [];
-                for (let i = 0; i < stringCount; i++) {
-                    let off = stringsOffset + view.getUint32(stringPoolOffset + 28 + (i * 4), true);
-                    let len = view.getUint16(off, true); // UTF-16 len
-                    let str = "";
-                    for (let j = 0; j < len; j++) {
+                var strings = [];
+                for (var i = 0; i < stringCount; i++) {
+                    var off = stringsOffset + view.getUint32(stringPoolOffset + 28 + (i * 4), true);
+                    var len = view.getUint16(off, true); // UTF-16 len
+                    var str = "";
+                    for (var j = 0; j < len; j++) {
                         str += String.fromCharCode(view.getUint16(off + 2 + (j * 2), true));
                     }
                     strings.push(str);
                 }
 
                 // Agora procuramos na lista de strings por algo que pareça um package name ou versão
-                let pkg = strings.find(s => s.includes('.') && s.split('.').length >= 2 && !s.includes(' ') && s.length > 5);
-                let ver = strings.find(s => /^[0-9]+\.[0-9]+/.test(s));
+                var pkg = null;
+                var ver = null;
+                for (var k = 0; k < strings.length; k++) {
+                    var s = strings[k];
+                    if (!pkg && s.indexOf('.') !== -1 && s.split('.').length >= 2 && s.indexOf(' ') === -1 && s.length > 5) {
+                        pkg = s;
+                    }
+                    if (!ver && /^[0-9]+\.[0-9]+/.test(s)) {
+                        ver = s;
+                    }
+                }
 
-                let infoParts = [];
+                var infoParts = [];
                 if (pkg) {
                     document.getElementById('appPackageName').value = pkg;
                     infoParts.push('📦 ID: ' + pkg);
@@ -997,7 +1004,7 @@
                 }
 
                 // Nome do App sugerido pelo arquivo (sempre substitui ao trocar de arquivo)
-                const cleanName = file.name.replace('.apk', '').replace(/[_-]/g, ' ');
+                var cleanName = file.name.replace('.apk', '').replace(/[_-]/g, ' ');
                 document.getElementById('appName').value = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
 
                 if (infoParts.length > 0) {
@@ -1008,11 +1015,11 @@
                     statusEl.className = 'text-xs text-yellow-500 mt-1';
                 }
 
-            } catch (err) {
+            }).catch(function (err) {
                 console.error('Erro ao ler APK:', err);
                 statusEl.textContent = '⚠️ Incompatibilidade: Este APK usa uma estrutura de strings diferente.';
                 statusEl.className = 'text-xs text-zinc-500 mt-1';
-            }
+            });
         }
         // ---------------------------------
 
@@ -2577,11 +2584,11 @@
         });
     </script>
     <script>
-        // PWA Install Logic - Com memória de escolha do usuário
-        let deferredPrompt;
-        const installBanner = document.getElementById('installBanner');
-        const BANNER_DISMISSED_KEY = 'pwa_banner_dismissed';
-        const BANNER_INSTALLED_KEY = 'pwa_installed';
+        // PWA Install Logic - Com memória de escolha do usuário (ES5 para TV Box)
+        var deferredPrompt = null;
+        var installBanner = document.getElementById('installBanner');
+        var BANNER_DISMISSED_KEY = 'pwa_banner_dismissed';
+        var BANNER_INSTALLED_KEY = 'pwa_installed';
 
         // Verifica se deve mostrar o banner
         function shouldShowBanner() {
@@ -2590,11 +2597,11 @@
                 return false;
             }
             // Se clicou "Depois", verifica se já passou 7 dias
-            const dismissed = localStorage.getItem(BANNER_DISMISSED_KEY);
+            var dismissed = localStorage.getItem(BANNER_DISMISSED_KEY);
             if (dismissed) {
-                const dismissedDate = new Date(parseInt(dismissed));
-                const now = new Date();
-                const daysPassed = (now - dismissedDate) / (1000 * 60 * 60 * 24);
+                var dismissedDate = new Date(parseInt(dismissed));
+                var now = new Date();
+                var daysPassed = (now - dismissedDate) / (1000 * 60 * 60 * 24);
                 if (daysPassed < 7) {
                     return false;
                 }
@@ -2615,13 +2622,13 @@
         // Inicializa - mostra banner se permitido
         document.addEventListener('DOMContentLoaded', showBannerIfAllowed);
 
-        window.addEventListener('beforeinstallprompt', (e) => {
+        window.addEventListener('beforeinstallprompt', function (e) {
             e.preventDefault();
             deferredPrompt = e;
             showBannerIfAllowed();
         });
 
-        async function installPWA() {
+        function installPWA() {
             if (!deferredPrompt) {
                 // Se não há prompt disponível, apenas fecha o banner
                 closeInstallBanner();
@@ -2631,30 +2638,29 @@
             closeInstallBanner();
             deferredPrompt.prompt();
 
-            const { outcome } = await deferredPrompt.userChoice;
-            console.log(`Resposta do usuário: ${outcome}`);
-
-            if (outcome === 'accepted') {
-                localStorage.setItem(BANNER_INSTALLED_KEY, 'true');
-            }
-
-            deferredPrompt = null;
+            deferredPrompt.userChoice.then(function (choiceResult) {
+                console.log('Resposta do usuário: ' + choiceResult.outcome);
+                if (choiceResult.outcome === 'accepted') {
+                    localStorage.setItem(BANNER_INSTALLED_KEY, 'true');
+                }
+                deferredPrompt = null;
+            });
         }
 
         function closeInstallBanner() {
-            const banner = document.getElementById('installBanner');
+            var banner = document.getElementById('installBanner');
             if (banner) {
                 // Salva que o usuário clicou "Depois"
                 localStorage.setItem(BANNER_DISMISSED_KEY, Date.now().toString());
 
                 banner.style.transition = "opacity 0.5s ease";
                 banner.style.opacity = "0";
-                setTimeout(() => banner.classList.add('hidden'), 500);
+                setTimeout(function () { banner.classList.add('hidden'); }, 500);
             }
         }
 
         // Se o app for instalado
-        window.addEventListener('appinstalled', () => {
+        window.addEventListener('appinstalled', function () {
             console.log('PWA instalado com sucesso!');
             localStorage.setItem(BANNER_INSTALLED_KEY, 'true');
             if (installBanner) installBanner.classList.add('hidden');
@@ -2663,20 +2669,20 @@
 
         // Registro do Service Worker
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
+            window.addEventListener('load', function () {
                 navigator.serviceWorker.register('./sw.js')
-                    .then(reg => {
+                    .then(function (reg) {
                         console.log('SW registrado com sucesso!', reg.scope);
-                        reg.onupdatefound = () => {
-                            const installingWorker = reg.installing;
-                            installingWorker.onstatechange = () => {
+                        reg.onupdatefound = function () {
+                            var installingWorker = reg.installing;
+                            installingWorker.onstatechange = function () {
                                 if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
                                     console.log('Nova versão disponível! Por favor, recarregue.');
                                 }
                             };
                         };
                     })
-                    .catch(err => console.log('Erro ao registrar SW:', err));
+                    .catch(function (err) { console.log('Erro ao registrar SW:', err); });
             });
         }
     </script>
