@@ -1,4 +1,4 @@
-const CACHE_NAME = 'apk-store-v4'; // Versão alterada para forçar refresh
+const CACHE_NAME = 'apk-store-v5'; // Versão alterada para forçar refresh
 const ASSETS = [
     './',
     './index.html',
