@@ -11,9 +11,45 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg?v=2">
     <link rel="apple-touch-icon" href="apple-touch-icon.png?v=2">
     <link rel="manifest" href="manifest.json">
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- TailwindCSS Pre-compiled (compatível com Chrome 55+) -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <!-- Polyfill para browsers antigos -->
+    <script>
+        // Polyfill Promise.allSettled para Chrome 55
+        if (!Promise.allSettled) {
+            Promise.allSettled = function (promises) {
+                return Promise.all(promises.map(function (p) {
+                    return Promise.resolve(p).then(
+                        function (value) { return { status: 'fulfilled', value: value }; },
+                        function (reason) { return { status: 'rejected', reason: reason }; }
+                    );
+                }));
+            };
+        }
+        // Polyfill Array.prototype.find para Chrome antigo
+        if (!Array.prototype.find) {
+            Array.prototype.find = function (predicate) {
+                for (var i = 0; i < this.length; i++) {
+                    if (predicate(this[i], i, this)) return this[i];
+                }
+                return undefined;
+            };
+        }
+        // Polyfill String.prototype.includes
+        if (!String.prototype.includes) {
+            String.prototype.includes = function (search) {
+                return this.indexOf(search) !== -1;
+            };
+        }
+        // Polyfill Array.prototype.includes
+        if (!Array.prototype.includes) {
+            Array.prototype.includes = function (search) {
+                return this.indexOf(search) !== -1;
+            };
+        }
+    </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Supabase será carregado opcionalmente, fallback para REST API -->
     <style>
         /* shadcn/ui inspired design system - Zinc palette */
         :root {
@@ -23,6 +59,120 @@
             --text-primary: #fafafa;
             --text-muted: #a1a1aa;
             --accent: #facc15;
+        }
+
+        /* Zinc Color Classes (Tailwind 3.x compatível com Tailwind 2.x) */
+        .bg-zinc-50 {
+            background-color: #fafafa;
+        }
+
+        .bg-zinc-100 {
+            background-color: #f4f4f5;
+        }
+
+        .bg-zinc-200 {
+            background-color: #e4e4e7;
+        }
+
+        .bg-zinc-300 {
+            background-color: #d4d4d8;
+        }
+
+        .bg-zinc-400 {
+            background-color: #a1a1aa;
+        }
+
+        .bg-zinc-500 {
+            background-color: #71717a;
+        }
+
+        .bg-zinc-600 {
+            background-color: #52525b;
+        }
+
+        .bg-zinc-700 {
+            background-color: #3f3f46;
+        }
+
+        .bg-zinc-800 {
+            background-color: #27272a;
+        }
+
+        .bg-zinc-900 {
+            background-color: #18181b;
+        }
+
+        .bg-zinc-950 {
+            background-color: #09090b;
+        }
+
+        .text-zinc-50 {
+            color: #fafafa;
+        }
+
+        .text-zinc-100 {
+            color: #f4f4f5;
+        }
+
+        .text-zinc-200 {
+            color: #e4e4e7;
+        }
+
+        .text-zinc-300 {
+            color: #d4d4d8;
+        }
+
+        .text-zinc-400 {
+            color: #a1a1aa;
+        }
+
+        .text-zinc-500 {
+            color: #71717a;
+        }
+
+        .text-zinc-600 {
+            color: #52525b;
+        }
+
+        .text-zinc-950 {
+            color: #09090b;
+        }
+
+        .border-zinc-700 {
+            border-color: #3f3f46;
+        }
+
+        .border-zinc-800 {
+            border-color: #27272a;
+        }
+
+        .hover\:bg-zinc-600:hover {
+            background-color: #52525b;
+        }
+
+        .hover\:bg-zinc-700:hover {
+            background-color: #3f3f46;
+        }
+
+        .hover\:border-zinc-700:hover {
+            border-color: #3f3f46;
+        }
+
+        .hover\:text-zinc-50:hover {
+            color: #fafafa;
+        }
+
+        /* z-index classes */
+        .z-\[100\] {
+            z-index: 100;
+        }
+
+        /* Line clamp for descriptions */
+        .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
         }
 
         body {
@@ -1072,24 +1222,146 @@
                 key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpyeG93a2JlcGJmbXFucWxuZWlkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1ODkwMDksImV4cCI6MjA4MjE2NTAwOX0.0GJMzS9bxzqNJJrz-dSzDslr01C7ubSPVbvB71_ZLMI'
             };
 
-            var supabaseUrl = localStorage.getItem('supabaseUrl') || defaultConfig.url;
-            var supabaseKey = localStorage.getItem('supabaseKey') || defaultConfig.key;
+            var supabaseUrl = defaultConfig.url;
+            var supabaseKey = defaultConfig.key;
 
-            // Ensure they are saved in localStorage for other functions to access
-            if (!localStorage.getItem('supabaseUrl')) localStorage.setItem('supabaseUrl', supabaseUrl);
-            if (!localStorage.getItem('supabaseKey')) localStorage.setItem('supabaseKey', supabaseKey);
+            // Salvar no localStorage para compatibilidade
+            localStorage.setItem('supabaseUrl', supabaseUrl);
+            localStorage.setItem('supabaseKey', supabaseKey);
 
-            if (supabaseUrl && supabaseKey) {
+            // Tentar usar a biblioteca oficial do Supabase
+            if (typeof supabase !== 'undefined' && supabase && supabase.createClient) {
                 try {
                     supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
-                    console.log('Supabase conectado com sucesso (Project: ' + supabaseUrl.split('//')[1].split('.')[0] + ')');
+                    console.log('Supabase conectado via biblioteca oficial!');
+                    return;
                 } catch (error) {
-                    console.error('Erro ao conectar com Supabase:', error);
+                    console.warn('Erro na biblioteca Supabase, usando fallback REST:', error);
                 }
-            } else {
-                console.warn('Supabase Key ausente. Configure no painel Admin.');
             }
+
+            // FALLBACK: Criar cliente REST simples para TV Boxes antigas
+            console.log('Usando cliente REST fallback para compatibilidade...');
+            supabaseClient = createRestClient(supabaseUrl, supabaseKey);
         }
+
+        // Cliente REST simples (ES5) para browsers antigos
+        function createRestClient(baseUrl, apiKey) {
+            return {
+                from: function (table) {
+                    return new RestQueryBuilder(baseUrl, apiKey, table);
+                },
+                storage: {
+                    from: function (bucket) {
+                        return {
+                            list: function () {
+                                return Promise.resolve({ data: [], error: null });
+                            }
+                        };
+                    }
+                },
+                rpc: function (fname, params) {
+                    var url = baseUrl + '/rest/v1/rpc/' + fname;
+                    return fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': apiKey,
+                            'Authorization': 'Bearer ' + apiKey,
+                            'Content-Type': 'application/json',
+                            'Prefer': 'return=representation'
+                        },
+                        body: JSON.stringify(params)
+                    }).then(function (res) {
+                        return res.json().then(function (data) {
+                            return { data: data, error: res.ok ? null : data };
+                        });
+                    }).catch(function (err) {
+                        return { data: null, error: err };
+                    });
+                }
+            };
+        }
+
+        // Query Builder REST (ES5)
+        function RestQueryBuilder(baseUrl, apiKey, table) {
+            this.baseUrl = baseUrl;
+            this.apiKey = apiKey;
+            this.table = table;
+            this.params = [];
+            this.selectFields = '*';
+            this.orderBy = null;
+        }
+
+        RestQueryBuilder.prototype.select = function (fields) {
+            this.selectFields = fields || '*';
+            return this;
+        };
+
+        RestQueryBuilder.prototype.eq = function (column, value) {
+            this.params.push(column + '=eq.' + encodeURIComponent(value));
+            return this;
+        };
+
+        RestQueryBuilder.prototype.neq = function (column, value) {
+            this.params.push(column + '=neq.' + encodeURIComponent(value));
+            return this;
+        };
+
+        RestQueryBuilder.prototype.in = function (column, values) {
+            this.params.push(column + '=in.(' + values.map(function (v) { return encodeURIComponent(v); }).join(',') + ')');
+            return this;
+        };
+
+        RestQueryBuilder.prototype.order = function (column, options) {
+            var dir = (options && options.ascending === false) ? 'desc' : 'asc';
+            this.orderBy = 'order=' + column + '.' + dir;
+            return this;
+        };
+
+        RestQueryBuilder.prototype.limit = function (n) {
+            this.params.push('limit=' + n);
+            return this;
+        };
+
+        RestQueryBuilder.prototype.single = function () {
+            this.params.push('limit=1');
+            this.isSingle = true;
+            return this;
+        };
+
+        RestQueryBuilder.prototype.then = function (callback) {
+            var url = this.baseUrl + '/rest/v1/' + this.table + '?select=' + encodeURIComponent(this.selectFields);
+            if (this.params.length > 0) {
+                url += '&' + this.params.join('&');
+            }
+            if (this.orderBy) {
+                url += '&' + this.orderBy;
+            }
+
+            var self = this;
+            return fetch(url, {
+                method: 'GET',
+                headers: {
+                    'apikey': this.apiKey,
+                    'Authorization': 'Bearer ' + this.apiKey,
+                    'Content-Type': 'application/json'
+                }
+            }).then(function (res) {
+                return res.json().then(function (data) {
+                    if (self.isSingle && Array.isArray(data)) {
+                        data = data[0] || null;
+                    }
+                    return { data: data, error: res.ok ? null : data };
+                });
+            }).then(callback).catch(function (err) {
+                return callback({ data: null, error: err });
+            });
+        };
+
+        RestQueryBuilder.prototype.catch = function (callback) {
+            // Handled in then
+            return this;
+        };
 
 
         // Render store view
