@@ -1377,7 +1377,7 @@
             supabaseClient
                 .from('aplicativos')
                 .select('*')
-                .neq('ativo', false)
+                // .neq('ativo', false) // REMOVIDO: Filtragem agora é no client-side para incluir NULL
                 .order('data_upload', { ascending: false })
                 .then(function (response) {
                     document.getElementById('storeLoading').classList.add('hidden');
@@ -1388,7 +1388,12 @@
                         return;
                     }
 
-                    allApps = response.data || [];
+                    // Client-side filtering: includes true AND null (undefined)
+                    var rawApps = response.data || [];
+                    allApps = rawApps.filter(function (app) {
+                        return app.ativo !== false;
+                    });
+                    
                     loadRatingsAndDisplay(allApps);
                 })
                 .catch(function (error) {
@@ -1981,9 +1986,9 @@
             var showInactive = document.getElementById('showInactive').checked;
             var query = supabaseClient.from('aplicativos').select('*').order('data_upload', { ascending: false });
 
-            if (!showInactive) {
-                query = query.neq('ativo', false);
-            }
+            // if (!showInactive) {
+            //     query = query.neq('ativo', false);
+            // }
 
             query.then(function (response) {
                 if (response.error) {
@@ -1991,7 +1996,18 @@
                     return;
                 }
 
-                var apps = response.data || [];
+                var allFetchedApps = response.data || [];
+                var apps = [];
+
+                // Filter client-side
+                if (!showInactive) {
+                    apps = allFetchedApps.filter(function(app) {
+                        return app.ativo !== false; // Include true and null
+                    });
+                } else {
+                    apps = allFetchedApps;
+                }
+
                 if (apps.length === 0) {
                     document.getElementById('manageAppsList').innerHTML = '<p class="text-zinc-500 text-center py-8">Nenhum aplicativo encontrado.</p>';
                     return;
